@@ -27,6 +27,7 @@ def ask_groq(
     image_mime_type: str | None = None,
 ) -> ResponseModel:
     settings = get_settings()
+    model = (settings.groq_vision_model or settings.groq_model) if image_data is not None else settings.groq_model
     api_key = (
         settings.groq_api_key.get_secret_value().strip() if settings.groq_api_key else ""
     )
@@ -67,12 +68,13 @@ def ask_groq(
             max_retries=0,
         ) as client:
             response = client.chat.completions.create(
-                model=settings.groq_model,
+                model=model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                reasoning_format="hidden",
                 temperature=0.2,
                 max_completion_tokens=4096,
+                # Reasoning controls belong to the configured chat model, not every vision model.
+                **({"reasoning_format": "hidden"} if image_data is None else {}),
             )
     except (APIError, RequestError, ValueError) as error:
         # Provider bodies can echo API keys, health context or base64 images.
@@ -81,7 +83,7 @@ def ask_groq(
             "Groq request failed: error_type=%s upstream_status_code=%s model=%s",
             type(error).__name__,
             error.status_code if isinstance(error, APIStatusError) else None,
-            settings.groq_model,
+            model,
         )
         raise HTTPException(
             status_code=502, detail="AI provider could not complete request"

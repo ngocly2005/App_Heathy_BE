@@ -1,13 +1,15 @@
+from app.core.dates import today as business_today
 import json
 from datetime import date
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, Query, status
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.groq_client import ask_groq
 from app.core.images import validate_image
 from app.dependencies import CurrentUser, DbSession
-from app.models import FoodLog, HealthProfile
+from app.models import AIInteraction, FoodLog, HealthProfile
 from app.profile import build_profile_response
 from app.schemas import (
     FoodLogResponse,
@@ -16,6 +18,7 @@ from app.schemas import (
     PhotoAnalysisResponse,
     PhotoConfirmRequest,
     PhotoConfirmResponse,
+    AIInteractionResponse,
 )
 from app.tracking import daily_dashboard
 
@@ -41,7 +44,7 @@ def meal_chat(
         raise HTTPException(status_code=409, detail="Create a health profile first")
 
     health = build_profile_response(profile)
-    dashboard = daily_dashboard(current_user, db, date.today())
+    dashboard = daily_dashboard(current_user, db, payload.date)
     context = {
         "profile": health.model_dump(include={
             "age", "sex", "height_cm", "weight_kg", "activity_level", "goal", "bmi",
@@ -49,13 +52,38 @@ def meal_chat(
         }),
         "daily": dashboard.model_dump(mode="json", exclude={"food_logs", "activity_logs"}),
     }
-    return ask_groq(
-        system_instruction=MEAL_PROMPT,
-        prompt=json.dumps({
-            "context": context, "question": payload.question,
-        }, ensure_ascii=False),
-        response_schema=MealChatResponse,
-    )
+    previous = list(db.scalars(select(AIInteraction).where(AIInteraction.user_id == current_user.id,
+                    AIInteraction.kind == "chat", AIInteraction.status == "success")
+                    .order_by(AIInteraction.id.desc()).limit(6)))
+    history = [{"question": row.question, "answer": (row.response or {}).get("answer", "")}
+               for row in reversed(previous)]
+    return recorded_ai(db, current_user.id, "chat", payload.date, payload.question,
+        lambda: ask_groq(system_instruction=MEAL_PROMPT,
+            prompt=json.dumps({"context": context, "history": history, "question": payload.question}, ensure_ascii=False),
+            response_schema=MealChatResponse))
+
+
+def recorded_ai(db, user_id, kind, context_date, question, operation):
+    try:
+        result = operation()
+    except HTTPException as exc:
+        db.add(AIInteraction(user_id=user_id, kind=kind, context_date=context_date,
+                            question=question, status="error", error_code=exc.status_code))
+        db.commit()
+        raise
+    db.add(AIInteraction(user_id=user_id, kind=kind, context_date=context_date,
+                        question=question, response=result.model_dump(mode="json"), status="success"))
+    db.commit()
+    return result
+
+
+@router.get("/chat/history", response_model=list[AIInteractionResponse])
+def chat_history(current_user: CurrentUser, db: DbSession,
+                 before_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100)):
+    statement = select(AIInteraction).where(AIInteraction.user_id == current_user.id, AIInteraction.kind == "chat")
+    if before_id is not None:
+        statement = statement.where(AIInteraction.id < before_id)
+    return list(reversed(list(db.scalars(statement.order_by(AIInteraction.id.desc()).limit(limit)))))
 
 
 PHOTO_PROMPT = """Estimate the foods visible in this image for a calorie tracker.
@@ -70,7 +98,9 @@ The user must review and confirm the estimates before any food log is saved."""
 @router.post("/photo/analyze", response_model=PhotoAnalysisResponse)
 def analyze_photo(
     current_user: CurrentUser,
+    db: DbSession,
     image: UploadFile = File(...),
+    context_date: date | None = Query(default=None, alias="date"),
 ) -> PhotoAnalysisResponse:
     max_bytes = get_settings().max_image_size_mb * 1024 * 1024
     try:
@@ -80,13 +110,9 @@ def analyze_photo(
     if len(data) > max_bytes:
         raise HTTPException(status_code=413, detail="Image exceeds size limit")
     content_type = validate_image(data, image.content_type)
-    return ask_groq(
-        system_instruction=PHOTO_PROMPT,
-        prompt="Estimate this meal.",
-        response_schema=PhotoAnalysisResponse,
-        image_data=data,
-        image_mime_type=content_type,
-    )
+    return recorded_ai(db, current_user.id, "photo", context_date or business_today(), None,
+        lambda: ask_groq(system_instruction=PHOTO_PROMPT, prompt="Estimate this meal.",
+            response_schema=PhotoAnalysisResponse, image_data=data, image_mime_type=content_type))
 
 
 @router.post(
@@ -105,6 +131,7 @@ def confirm_photo(
             food_id=None,
             log_date=payload.log_date,
             meal_type=payload.meal_type,
+            meal_time=payload.meal_time,
             grams=item.estimated_grams,
             food_name=item.name,
             calories_kcal=item.calories_kcal,

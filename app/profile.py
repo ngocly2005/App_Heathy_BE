@@ -1,3 +1,4 @@
+from app.core.dates import today as business_today
 from datetime import date
 
 from fastapi import APIRouter, HTTPException
@@ -57,14 +58,14 @@ def upsert_profile(
     today_weight = db.scalar(
         select(WeightEntry).where(
             WeightEntry.user_id == current_user.id,
-            WeightEntry.measured_on == date.today(),
+            WeightEntry.measured_on == business_today(),
         )
     )
     if today_weight is None:
         db.add(
             WeightEntry(
                 user_id=current_user.id,
-                measured_on=date.today(),
+                measured_on=business_today(),
                 weight_kg=payload.weight_kg,
             )
         )

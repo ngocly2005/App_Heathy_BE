@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     UniqueConstraint,
     Numeric,
     String,
@@ -26,6 +27,7 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("status IN ('active', 'disabled')", name="ck_users_status"),
+        CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
         UniqueConstraint("google_sub", name="uq_users_google_sub"),
     )
 
@@ -34,6 +36,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(120))
     google_sub: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(20), default="active")
+    role: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
@@ -61,7 +64,7 @@ class HealthProfile(Base):
         CheckConstraint("height_cm > 0", name="ck_health_profile_height"),
         CheckConstraint("weight_kg > 0", name="ck_health_profile_weight"),
         CheckConstraint(
-            "activity_level IN ('sedentary', 'light', 'moderate', 'very_active')",
+            "activity_level IN ('sedentary', 'light', 'moderate', 'very_active', 'extra_active')",
             name="ck_health_profile_activity",
         ),
         CheckConstraint(
@@ -125,6 +128,7 @@ class FoodLog(Base):
     )
     log_date: Mapped[date] = mapped_column(Date)
     meal_type: Mapped[str] = mapped_column(String(20))
+    meal_time: Mapped[str | None] = mapped_column(String(5))
     grams: Mapped[float] = mapped_column(Numeric(8, 2))
     food_name: Mapped[str] = mapped_column(String(160))
     calories_kcal: Mapped[float] = mapped_column(Numeric(9, 2))
@@ -266,3 +270,47 @@ class SavedMealItem(Base):
     protein_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
     carb_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
     fat_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
+
+
+class WaterSettings(Base):
+    __tablename__ = "water_settings"
+    __table_args__ = (
+        CheckConstraint("target_ml IS NULL OR (target_ml >= 500 AND target_ml <= 10000)", name="ck_water_settings_target"),
+        CheckConstraint("serving_ml IN (200, 500)", name="ck_water_settings_serving"),
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    target_ml: Mapped[int | None] = mapped_column(Integer)
+    serving_ml: Mapped[int] = mapped_column(Integer, default=200, server_default="200")
+
+
+class NutritionSettings(Base):
+    __tablename__ = "nutrition_settings"
+    __table_args__ = (
+        CheckConstraint("calorie_target IS NULL OR (calorie_target >= 500 AND calorie_target <= 10000)", name="ck_nutrition_calorie"),
+        CheckConstraint("protein_pct >= 0 AND carb_pct >= 0 AND fat_pct >= 0 AND protein_pct + carb_pct + fat_pct = 100", name="ck_nutrition_macro"),
+        CheckConstraint("target_weight_kg IS NULL OR (target_weight_kg > 20 AND target_weight_kg <= 400)", name="ck_nutrition_weight"),
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    calorie_target: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    protein_pct: Mapped[int] = mapped_column(Integer, default=25, server_default="25")
+    carb_pct: Mapped[int] = mapped_column(Integer, default=50, server_default="50")
+    fat_pct: Mapped[int] = mapped_column(Integer, default=25, server_default="25")
+    target_weight_kg: Mapped[float | None] = mapped_column(Numeric(5, 2))
+
+
+class AIInteraction(Base):
+    __tablename__ = "ai_interactions"
+    __table_args__ = (
+        CheckConstraint("kind IN ('chat', 'photo')", name="ck_ai_kind"),
+        CheckConstraint("status IN ('success', 'error')", name="ck_ai_status"),
+        Index("ix_ai_user_created", "user_id", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(10))
+    context_date: Mapped[date] = mapped_column(Date)
+    question: Mapped[str | None] = mapped_column(Text)
+    response: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(10))
+    error_code: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

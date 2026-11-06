@@ -34,7 +34,7 @@ def build_items(
     db: DbSession,
     payloads: list[SavedMealItemCreate],
 ) -> list[SavedMealItem]:
-    food_ids = {item.food_id for item in payloads}
+    food_ids = {item.food_id for item in payloads if item.food_id is not None}
     foods = {
         food.id: food
         for food in db.scalars(
@@ -47,19 +47,17 @@ def build_items(
     if len(foods) != len(food_ids):
         raise HTTPException(status_code=404, detail="One or more foods were not found")
 
-    return [
-        SavedMealItem(
-            food_id=food.id,
-            food_name=food.name,
-            grams=item.grams,
-            calories_per_100g=food.calories_per_100g,
-            protein_per_100g=food.protein_per_100g,
-            carb_per_100g=food.carb_per_100g,
-            fat_per_100g=food.fat_per_100g,
-        )
-        for item in payloads
-        for food in [foods[item.food_id]]
-    ]
+    result = []
+    for item in payloads:
+        if item.food_id is not None:
+            food = foods[item.food_id]
+            values = {key: getattr(food, key) for key in (
+                "calories_per_100g", "protein_per_100g", "carb_per_100g", "fat_per_100g")}
+            result.append(SavedMealItem(food_id=food.id, food_name=food.name, grams=item.grams, **values))
+        else:
+            values = item.model_dump(exclude={"food_id", "food_name", "grams"})
+            result.append(SavedMealItem(food_id=None, food_name=item.food_name, grams=item.grams, **values))
+    return result
 
 
 def build_response(db: DbSession, meal: SavedMeal) -> SavedMealResponse:
@@ -204,6 +202,7 @@ def log_saved_meal(
             food_id=item.food_id,
             log_date=payload.log_date,
             meal_type=payload.meal_type,
+            meal_time=payload.meal_time,
             grams=item.grams,
             food_name=item.food_name,
             calories_kcal=scale_nutrition(

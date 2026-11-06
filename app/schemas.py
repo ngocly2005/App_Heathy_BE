@@ -1,7 +1,9 @@
+from app.core.dates import today as business_today
 from datetime import date, datetime
+from datetime import date as DateValue
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class UserResponse(BaseModel):
@@ -11,6 +13,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     full_name: str
     status: str
+    role: str = "user"
     google_sub: str
     created_at: datetime
 
@@ -18,6 +21,7 @@ class MealChatRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     question: str = Field(min_length=2, max_length=1000)
+    date: DateValue = Field(default_factory=business_today)
 
 
 class MealChatResponse(BaseModel):
@@ -46,7 +50,7 @@ class MessageResponse(BaseModel):
 
 
 Sex = Literal["male", "female"]
-ActivityLevel = Literal["sedentary", "light", "moderate", "very_active"]
+ActivityLevel = Literal["sedentary", "light", "moderate", "very_active", "extra_active"]
 HealthGoal = Literal["lose", "maintain", "gain"]
 
 
@@ -61,7 +65,7 @@ class ProfileUpsert(BaseModel):
     @field_validator("birth_date")
     @classmethod
     def birth_date_must_be_in_the_past(cls, birth_date: date) -> date:
-        if birth_date >= date.today():
+        if birth_date >= business_today():
             raise ValueError("Birth date must be in the past")
         return birth_date
 
@@ -97,9 +101,10 @@ class FoodResponse(BaseModel):
 
 class FoodLogCreate(BaseModel):
     food_id: int
-    grams: float = Field(gt=0, le=10000)
+    grams: float = Field(ge=0.01, le=10000)
     meal_type: MealType
-    log_date: date = Field(default_factory=date.today)
+    log_date: date = Field(default_factory=business_today)
+    meal_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class FoodLogResponse(BaseModel):
@@ -109,6 +114,7 @@ class FoodLogResponse(BaseModel):
     food_id: int | None
     log_date: date
     meal_type: str
+    meal_time: str | None = None
     grams: float
     food_name: str
     calories_kcal: float
@@ -120,7 +126,7 @@ class FoodLogResponse(BaseModel):
 
 class WaterLogCreate(BaseModel):
     amount_ml: int = Field(gt=0, le=5000)
-    log_date: date = Field(default_factory=date.today)
+    log_date: date = Field(default_factory=business_today)
 
 
 class WaterLogResponse(BaseModel):
@@ -144,7 +150,7 @@ class ActivityTypeResponse(BaseModel):
 class ActivityLogCreate(BaseModel):
     activity_type_id: int
     duration_minutes: int = Field(gt=0, le=1440)
-    log_date: date = Field(default_factory=date.today)
+    log_date: date = Field(default_factory=business_today)
 
 
 class ActivityLogResponse(BaseModel):
@@ -241,8 +247,20 @@ class HistoryDetailResponse(BaseModel):
 
 
 class SavedMealItemCreate(BaseModel):
-    food_id: int
-    grams: float = Field(gt=0, le=10000)
+    model_config = ConfigDict(allow_inf_nan=False, str_strip_whitespace=True)
+    food_id: int | None = Field(default=None, gt=0)
+    grams: float = Field(ge=0.01, le=10000)
+    food_name: str | None = Field(default=None, min_length=1, max_length=160)
+    calories_per_100g: float | None = Field(default=None, ge=0, le=20000)
+    protein_per_100g: float = Field(default=0, ge=0, le=2000)
+    carb_per_100g: float = Field(default=0, ge=0, le=3000)
+    fat_per_100g: float = Field(default=0, ge=0, le=2000)
+
+    @model_validator(mode="after")
+    def snapshot_or_catalog(self):
+        if self.food_id is None and (not self.food_name or self.calories_per_100g is None):
+            raise ValueError("Provide food_id or food_name and nutrition snapshot")
+        return self
 
 
 class SavedMealCreate(BaseModel):
@@ -282,15 +300,16 @@ class SavedMealResponse(BaseModel):
 
 class SavedMealLogRequest(BaseModel):
     meal_type: MealType
-    log_date: date = Field(default_factory=date.today)
+    log_date: date = Field(default_factory=business_today)
+    meal_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 
 class PhotoFoodItem(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=160)
-    estimated_grams: float = Field(gt=0, le=10000)
+    estimated_grams: float = Field(ge=0.01, le=10000)
     calories_kcal: float = Field(ge=0, le=20000)
     protein_g: float = Field(ge=0, le=2000)
     carb_g: float = Field(ge=0, le=3000)
@@ -311,8 +330,63 @@ class PhotoConfirmRequest(BaseModel):
 
     items: list[PhotoFoodItem] = Field(min_length=1, max_length=20)
     meal_type: MealType
-    log_date: date = Field(default_factory=date.today)
+    log_date: date = Field(default_factory=business_today)
+    meal_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class PhotoConfirmResponse(BaseModel):
     created_logs: list[FoodLogResponse]
+
+
+class FoodLogUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, str_strip_whitespace=True)
+    grams: float = Field(ge=0.01, le=10000)
+    meal_type: MealType
+    meal_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+class WaterSettingsUpsert(BaseModel):
+    target_ml: int | None = Field(default=None, ge=500, le=10000)
+    serving_ml: Literal[200, 500] = 200
+
+
+class WaterSettingsResponse(WaterSettingsUpsert):
+    effective_target_ml: int
+
+
+class WaterAdjustment(BaseModel):
+    log_date: date
+    amount_ml: Literal[-500, -200, 200, 500]
+
+
+class WaterAdjustmentResponse(BaseModel):
+    date: date
+    total_ml: int
+
+
+class NutritionSettingsUpsert(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    calorie_target: float | None = Field(default=None, ge=500, le=10000)
+    protein_pct: int = Field(default=25, ge=0, le=100)
+    carb_pct: int = Field(default=50, ge=0, le=100)
+    fat_pct: int = Field(default=25, ge=0, le=100)
+    target_weight_kg: float | None = Field(default=None, gt=20, le=400)
+
+    @model_validator(mode="after")
+    def percentages_sum_to_100(self):
+        if self.protein_pct + self.carb_pct + self.fat_pct != 100:
+            raise ValueError("Macro percentages must add to 100")
+        return self
+
+
+class AIInteractionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: int
+    kind: str
+    context_date: date
+    question: str | None
+    response: dict | None
+    status: str
+    error_code: int | None
+    created_at: datetime

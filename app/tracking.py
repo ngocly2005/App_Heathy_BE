@@ -1,3 +1,4 @@
+from app.core.dates import today as business_today
 import calendar
 from datetime import date
 
@@ -21,6 +22,7 @@ from app.models import (
     Food,
     FoodLog,
     HealthProfile,
+    User,
     WaterLog,
 )
 from app.schemas import (
@@ -40,17 +42,8 @@ from app.schemas import (
 router = APIRouter(tags=["tracking"])
 
 def get_calorie_target(db: DbSession, user_id: int) -> float | None:
-    profile = db.get(HealthProfile, user_id)
-    if profile is None:
-        return None
-    age = calculate_age(profile.birth_date)
-    bmr = calculate_bmr(
-        float(profile.weight_kg),
-        float(profile.height_cm),
-        age,
-        profile.sex,
-    )
-    return calculate_tdee(bmr, profile.activity_level)
+    from app.settings import calorie_target
+    return calorie_target(db, user_id)
 
 
 @router.get("/foods", response_model=list[FoodResponse])
@@ -85,6 +78,7 @@ def create_food_log(
         food_id=food.id,
         log_date=payload.log_date,
         meal_type=payload.meal_type,
+        meal_time=payload.meal_time,
         grams=grams,
         food_name=food.name,
         calories_kcal=scale_nutrition(float(food.calories_per_100g), grams),
@@ -104,7 +98,7 @@ def list_food_logs(
     db: DbSession,
     log_date: date | None = Query(default=None, alias="date"),
 ) -> list[FoodLog]:
-    selected_date = log_date or date.today()
+    selected_date = log_date or business_today()
     return list(
         db.scalars(
             select(FoodLog)
@@ -141,6 +135,7 @@ def create_water_log(
     current_user: CurrentUser,
     db: DbSession,
 ) -> WaterLog:
+    db.scalar(select(User).where(User.id == current_user.id).with_for_update())
     water_log = WaterLog(user_id=current_user.id, **payload.model_dump())
     db.add(water_log)
     db.commit()
@@ -154,7 +149,7 @@ def list_water_logs(
     db: DbSession,
     log_date: date | None = Query(default=None, alias="date"),
 ) -> list[WaterLog]:
-    selected_date = log_date or date.today()
+    selected_date = log_date or business_today()
     return list(
         db.scalars(
             select(WaterLog)
@@ -173,6 +168,7 @@ def delete_water_log(
     current_user: CurrentUser,
     db: DbSession,
 ) -> Response:
+    db.scalar(select(User).where(User.id == current_user.id).with_for_update())
     water_log = db.get(WaterLog, log_id)
     if water_log is None or water_log.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Water log not found")
@@ -194,84 +190,13 @@ def list_activity_types(
     return list(db.scalars(statement))
 
 
-# @router.post(
-#     "/activity-logs",
-#     response_model=ActivityLogResponse,
-#     status_code=status.HTTP_201_CREATED,
-# )
-# def create_activity_log(
-#     payload: ActivityLogCreate,
-#     current_user: CurrentUser,
-#     db: DbSession,
-# ) -> ActivityLog:
-#     activity_type = db.get(ActivityType, payload.activity_type_id)
-#     if activity_type is None or not activity_type.is_active:
-#         raise HTTPException(status_code=404, detail="Activity type not found")
-
-#     profile = db.get(HealthProfile, current_user.id)
-#     if profile is None:
-#         raise HTTPException(status_code=409, detail="Create a health profile first")
-
-#     met = float(activity_type.met)
-#     activity_log = ActivityLog(
-#         user_id=current_user.id,
-#         activity_type_id=activity_type.id,
-#         log_date=payload.log_date,
-#         duration_minutes=payload.duration_minutes,
-#         activity_name=activity_type.name,
-#         met_snapshot=met,
-#         calories_burned=calculate_activity_calories(
-#             met,
-#             float(profile.weight_kg),
-#             payload.duration_minutes,
-#         ),
-#     )
-#     db.add(activity_log)
-#     db.commit()
-#     db.refresh(activity_log)
-#     return activity_log
-
-
-# @router.get("/activity-logs", response_model=list[ActivityLogResponse])
-# def list_activity_logs(
-#     current_user: CurrentUser,
-#     db: DbSession,
-#     log_date: date | None = Query(default=None, alias="date"),
-# ) -> list[ActivityLog]:
-#     selected_date = log_date or date.today()
-#     return list(
-#         db.scalars(
-#             select(ActivityLog)
-#             .where(
-#                 ActivityLog.user_id == current_user.id,
-#                 ActivityLog.log_date == selected_date,
-#             )
-#             .order_by(ActivityLog.created_at, ActivityLog.id)
-#         )
-#     )
-
-
-# @router.delete("/activity-logs/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
-# def delete_activity_log(
-#     log_id: int,
-#     current_user: CurrentUser,
-#     db: DbSession,
-# ) -> Response:
-#     activity_log = db.get(ActivityLog, log_id)
-#     if activity_log is None or activity_log.user_id != current_user.id:
-#         raise HTTPException(status_code=404, detail="Activity log not found")
-#     db.delete(activity_log)
-#     db.commit()
-#     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @router.get("/dashboard/daily", response_model=DailyDashboardResponse)
 def daily_dashboard(
     current_user: CurrentUser,
     db: DbSession,
     dashboard_date: date | None = Query(default=None, alias="date"),
 ) -> DailyDashboardResponse:
-    selected_date = dashboard_date or date.today()
+    selected_date = dashboard_date or business_today()
     food_logs = list(
         db.scalars(
             select(FoodLog).where(

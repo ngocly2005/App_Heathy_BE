@@ -1,3 +1,4 @@
+from app.core.dates import today as business_today
 from datetime import date
 
 ACTIVITY_FACTORS = {
@@ -5,11 +6,12 @@ ACTIVITY_FACTORS = {
     "light": 1.375,
     "moderate": 1.55,
     "very_active": 1.725,
+    "extra_active": 1.9,
 }
 
 
 def calculate_age(birth_date: date, today: date | None = None) -> int:
-    reference_date = today or date.today()
+    reference_date = today or business_today()
     birthday_passed = (reference_date.month, reference_date.day) >= (
         birth_date.month,
         birth_date.day,

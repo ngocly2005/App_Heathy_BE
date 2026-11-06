@@ -1,3 +1,4 @@
+from app.core.dates import today as business_today
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -36,6 +37,8 @@ def upsert_weight_entry(
     current_user: CurrentUser,
     db: DbSession,
 ) -> WeightEntry:
+    if measured_on > business_today():
+        raise HTTPException(status_code=422, detail="Weight date cannot be in the future")
     entry = db.scalar(
         select(WeightEntry).where(
             WeightEntry.user_id == current_user.id,
@@ -52,10 +55,12 @@ def upsert_weight_entry(
     else:
         entry.weight_kg = payload.weight_kg
 
-    if measured_on == date.today():
-        profile = db.get(HealthProfile, current_user.id)
-        if profile is not None:
-            profile.weight_kg = payload.weight_kg
+    db.flush()
+    latest = db.scalar(select(WeightEntry).where(WeightEntry.user_id == current_user.id)
+                       .order_by(WeightEntry.measured_on.desc()).limit(1))
+    profile = db.get(HealthProfile, current_user.id)
+    if profile is not None and latest is not None:
+        profile.weight_kg = latest.weight_kg
 
     db.commit()
     db.refresh(entry)
