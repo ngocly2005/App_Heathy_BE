@@ -130,6 +130,60 @@ def test_weight_history_calendar_and_notes(api):
     assert api.delete(f"/api/v1/weight-entries/{YESTERDAY}").status_code == 409
 
 
+def test_edit_and_delete_past_weight_preserves_latest_profile_and_other_users(api):
+    body(api.put("/api/v1/profile", json=PROFILE))
+    older = (business_today() - timedelta(days=40)).isoformat()
+    recent = (business_today() - timedelta(days=10)).isoformat()
+    body(api.put(f"/api/v1/weight-entries/{older}", json={"weight_kg":65.05}))
+    body(api.put(f"/api/v1/weight-entries/{recent}", json={"weight_kg":64.10}))
+    body(api.put(f"/api/v1/weight-entries/{TODAY}", json={"weight_kg":59.75}))
+    other = api.user_headers(2)
+    body(api.put(f"/api/v1/weight-entries/{older}", headers=other, json={"weight_kg":90.05}))
+
+    # Editing a historical record must change that record, not today's/latest measurement.
+    changed = body(api.put(f"/api/v1/weight-entries/{older}", json={"weight_kg":63.25}))
+    assert changed["measured_on"] == older and changed["weight_kg"] == 63.25
+    rows = {row["measured_on"]:row["weight_kg"] for row in body(api.get("/api/v1/weight-entries"))}
+    assert rows == {older:63.25, recent:64.10, TODAY:59.75}
+    assert body(api.get("/api/v1/profile"))["weight_kg"] == 59.75
+    assert body(api.get("/api/v1/weight-entries", headers=other))[0]["weight_kg"] == 90.05
+
+    assert api.delete(f"/api/v1/weight-entries/{older}").status_code == 204
+    assert body(api.get("/api/v1/profile"))["weight_kg"] == 59.75
+    assert body(api.get("/api/v1/weight-entries", headers=other))[0]["weight_kg"] == 90.05
+    assert api.delete(f"/api/v1/weight-entries/{recent}").status_code == 204
+    remaining = body(api.get("/api/v1/weight-entries"))
+    assert len(remaining) == 1 and remaining[0]["measured_on"] == TODAY
+    assert api.delete(f"/api/v1/weight-entries/{TODAY}").status_code == 409
+    tomorrow = (business_today() + timedelta(days=1)).isoformat()
+    assert api.put(f"/api/v1/weight-entries/{tomorrow}", json={"weight_kg":60}).status_code == 422
+
+
+def test_weight_date_range_includes_month_boundaries_and_leap_day(api):
+    body(api.put("/api/v1/profile", json=PROFILE))
+    for day, value in (("2024-01-31",65.0),("2024-02-01",64.5),("2024-02-29",63.25),("2024-03-01",63.0)):
+        body(api.put(f"/api/v1/weight-entries/{day}", json={"weight_kg":value}))
+    rows = body(api.get("/api/v1/weight-entries", params={"date_from":"2024-02-01","date_to":"2024-02-29"}))
+    assert [(row["measured_on"],row["weight_kg"]) for row in rows] == [("2024-02-01",64.5),("2024-02-29",63.25)]
+    assert body(api.get("/api/v1/weight-entries", params={"date_from":"2024-04-01","date_to":"2024-04-30"})) == []
+    assert body(api.get("/api/v1/profile"))["weight_kg"] == PROFILE["weight_kg"]
+
+
+def test_dashboard_food_updates_while_burned_calories_exceed_food(api):
+    body(api.put("/api/v1/profile", json=PROFILE))
+    body(api.put("/api/v1/nutrition-settings", json={"calorie_target":2000,"protein_pct":25,"carb_pct":50,"fat_pct":25}))
+    body(api.post("/api/v1/food-logs", json={"food_id":1,"grams":100,"meal_type":"lunch","log_date":YESTERDAY}),201)
+    body(api.post("/api/v1/activity-logs", json={"activity_type_id":1,"duration_minutes":120,"log_date":YESTERDAY}),201)
+    before = body(api.get("/api/v1/dashboard/daily", params={"date":YESTERDAY}))
+    assert before["calories_consumed"] == 100 and before["calories_burned"] == 378
+    assert before["net_calories"] == -278 and before["calories_remaining"] == 2278
+    body(api.post("/api/v1/food-logs", json={"food_id":1,"grams":50,"meal_type":"snack","log_date":YESTERDAY}),201)
+    after = body(api.get("/api/v1/dashboard/daily", params={"date":YESTERDAY}))
+    assert after["calories_consumed"] == 150 and after["net_calories"] == -228
+    assert after["calories_remaining"] == 2228
+    assert body(api.get("/api/v1/dashboard/daily", params={"date":TODAY}))["calories_consumed"] == 0
+
+
 def test_admin_auth_catalog_status_and_analytics(api):
     assert api.get("/api/v1/admin/users").status_code == 403
     admin = api.user_headers(3)
