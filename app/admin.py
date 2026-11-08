@@ -1,5 +1,5 @@
 from app.core.dates import today as business_today
-"""Server-enforced administration for the React Admin client."""
+"""Shared server-enforced administration for Android and React Admin clients."""
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo

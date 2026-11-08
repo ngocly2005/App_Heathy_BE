@@ -1,5 +1,19 @@
 # Kiểm chứng backend
 
+## 2026-11-08 — Chat đầy đủ và Admin Android/web dùng chung
+
+- 19 tests thành công (7 mới): SQLite trong bộ nhớ, Google/Groq mock; còn 2
+  deprecation warnings của thư viện test. Không gọi provider hoặc DB thật.
+- Chat giữ nguyên đầy đủ các bữa ăn dài/nhiều mục, đọc bản ghi legacy không có
+  `follow_up_questions`, lưu payload mới, phân trang/ownership và không tự ghi món.
+- Ngữ cảnh câu hỏi tiếp chứa cả các bữa gợi ý của lịch sử cũ; giới hạn riêng của
+  câu hỏi tiếp không cắt nội dung bữa ăn. OpenAPI offline đã được cập nhật.
+- Cấp/thu hồi Admin trực tiếp trong DB áp dụng ngay với access JWT còn hiệu lực:
+  các API Admin bị chặn khi mất role; role/status không do Android hoặc web tự quyết.
+- Kiểm tra payload đổi trạng thái không thể cấp role, không khóa Admin, cùng
+  danh mục CRUD/read/list/deactivate và dữ liệu công khai giữ nhất quán.
+- API Admin sẵn có dùng chung cho cả Android và React Admin. Không thêm migration.
+
 ## 2026-11-07 — Đối chiếu UI và BE
 
 - 12 HTTP regression tests thành công, gồm 3 tests mới; SQLite bộ nhớ,

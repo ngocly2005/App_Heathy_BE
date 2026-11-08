@@ -68,6 +68,19 @@ Lệnh chỉ cấp role cho user Google đang hoạt động đã tồn tại. K
 Admin mẫu. Đăng nhập lại React Admin sau khi cấp quyền. Mọi API Admin kiểm tra
 quyền tại BE; khóa user thu hồi refresh token và chặn access token đang còn hạn.
 
+Admin Android mới và React Admin web cùng dùng `/auth/me` và `/admin/*`, cùng
+Google account, role và database. Android mở cổng quản trị khi đăng nhập Admin;
+từ phần sức khỏe mở lại tại Tài khoản → Quản trị viên → Mở quản trị. Thay role
+trực tiếp trong DB có hiệu lực với API trên cả hai UI mà không cần cấp lại JWT;
+Android cập nhật danh tính khi trở lại app, Tải lại tài khoản hoặc mở Admin.
+Sửa danh mục ở một UI rồi tải lại UI còn lại để đọc dữ liệu chung mới nhất.
+
+Chat giữ `answer`, `suggestions`, `disclaimer`; `suggestions` là toàn bộ chi tiết
+bữa ăn nằm trong tin AI. Trường `follow_up_questions` mới (mặc định danh sách rỗng,
+tối đa 4 câu hỏi ngắn) chỉ phục vụ nút hỏi tiếp. Ngữ cảnh gửi cho AI bao gồm cả
+các bữa gợi ý trong lịch sử cũ. Dữ liệu được lưu trong JSON đã có; đợt này không
+thêm migration và không chạy upgrade database thật.
+
 ## API chính
 
 Tất cả đường dẫn dưới `/api/v1`, trừ `/health` ở origin:

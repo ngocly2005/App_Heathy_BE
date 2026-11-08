@@ -1,7 +1,7 @@
 from app.core.dates import today as business_today
 from datetime import date, datetime
 from datetime import date as DateValue
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -27,9 +27,12 @@ class MealChatRequest(BaseModel):
 class MealChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    answer: str
-    suggestions: list[str]
+    answer: str = Field(description="The assistant's complete response or introduction to the detailed meals below.")
+    suggestions: list[str] = Field(description="Full meal suggestions, including portions and estimated nutrition. These are part of the assistant message, not prompts to send.")
     disclaimer: str
+    follow_up_questions: list[Annotated[str, Field(min_length=2, max_length=120)]] = Field(
+        default_factory=list, max_length=4,
+        description="Short follow-up questions the user may choose to ask next; never meal descriptions.")
 
 class GoogleLoginRequest(BaseModel):
     id_token: str = Field(min_length=20, max_length=10000)

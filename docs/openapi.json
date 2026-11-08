@@ -3397,18 +3397,31 @@
         "properties": {
           "answer": {
             "type": "string",
-            "title": "Answer"
+            "title": "Answer",
+            "description": "The assistant's complete response or introduction to the detailed meals below."
           },
           "suggestions": {
             "items": {
               "type": "string"
             },
             "type": "array",
-            "title": "Suggestions"
+            "title": "Suggestions",
+            "description": "Full meal suggestions, including portions and estimated nutrition. These are part of the assistant message, not prompts to send."
           },
           "disclaimer": {
             "type": "string",
             "title": "Disclaimer"
+          },
+          "follow_up_questions": {
+            "items": {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 2
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Follow Up Questions",
+            "description": "Short follow-up questions the user may choose to ask next; never meal descriptions."
           }
         },
         "additionalProperties": false,
