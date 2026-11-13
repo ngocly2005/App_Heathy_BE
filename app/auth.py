@@ -76,7 +76,14 @@ def update_password(payload: PasswordUpdateRequest, current_user: CurrentUser, d
 
 @router.post("/link-google", response_model=UserResponse)
 def link_google(payload: GoogleLoginRequest, current_user: CurrentUser, db: DbSession):
-    identity = verify_google_token(payload.id_token)
+    try:
+        identity = verify_google_token(payload.id_token)
+    except HTTPException as error:
+        if error.status_code == 401:
+            # The app bearer is valid; it is the supplied Google proof that failed.
+            # A 401 here would make clients rotate/clear a perfectly valid session.
+            raise HTTPException(400, "Invalid Google proof; check Google configuration and try linking again") from error
+        raise
     user = db.scalar(select(User).where(User.id == current_user.id).with_for_update().execution_options(populate_existing=True))
     if user is None or user.status != "active":
         raise HTTPException(401, "Account is disabled")

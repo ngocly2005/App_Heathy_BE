@@ -114,6 +114,8 @@ def test_password_admin_uses_same_role_protection_and_catalog_as_google_admin(ap
     tokens = register(api)
     headers = bearer(tokens)
     assert api.get("/api/v1/admin/users", headers=headers).status_code == 403
+
+
     with Session(api.test_engine) as db:
         user = db.scalar(select(User).where(User.email == "new@example.com"))
         user.role = "admin"
@@ -126,3 +128,19 @@ def test_password_admin_uses_same_role_protection_and_catalog_as_google_admin(ap
         db.scalar(select(User).where(User.email == "new@example.com")).role = "user"
         db.commit()
     assert api.get("/api/v1/admin/users", headers=headers).status_code == 403
+
+
+def test_bad_google_link_proof_does_not_look_like_an_expired_app_session(api, monkeypatch):
+    tokens = register(api)
+    headers = bearer(tokens)
+
+    def invalid_proof(_):
+        raise HTTPException(401, "Invalid Google ID token")
+
+    monkeypatch.setattr("app.auth.verify_google_token", invalid_proof)
+    # Initial Google login is an auth failure; a failed link is an invalid body proof.
+    assert api.post("/api/v1/auth/google", json={"id_token":"g"*30}).status_code == 401
+    assert api.post("/api/v1/auth/link-google", headers=headers, json={"id_token":"g"*30}).status_code == 400
+    me = body(api.get("/api/v1/auth/me", headers=headers))
+    assert me["google_sub"] is None and me["has_password"]
+    assert api.post("/api/v1/auth/link-google", headers={"Authorization":""}, json={"id_token":"g"*30}).status_code == 401

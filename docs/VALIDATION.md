@@ -1,5 +1,13 @@
 # Kiểm chứng backend
 
+## 2026-11-13 — Giữ phiên khi liên kết Google không hợp lệ
+
+- 27 tests thành công. Khi Bearer app hợp lệ nhưng Google proof gửi để liên kết
+  không hợp lệ, BE trả 400 thay vì 401 để client không tự xoay/xóa phiên email.
+  Trường hợp chưa đăng nhập và Google login ban đầu vẫn trả 401 đúng ngữ nghĩa.
+- Kiểm tra tài khoản hiện tại vẫn truy cập /auth/me và chưa bị liên kết sai.
+  Chỉ thay BE và kiểm thử; không đổi schema/migration hoặc code FE đã được build.
+
 ## 2026-11-13 — Rà soát 32 task, email/mật khẩu song song Google
 
 - Android: 75 JVM tests thành công, APK và lintDebug thành công, không có Error/Fatal.
