@@ -29,18 +29,24 @@ class User(Base):
         CheckConstraint("status IN ('active', 'disabled')", name="ck_users_status"),
         CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
         UniqueConstraint("google_sub", name="uq_users_google_sub"),
+        CheckConstraint("google_sub IS NOT NULL OR password_hash IS NOT NULL", name="ck_users_auth_method"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     full_name: Mapped[str] = mapped_column(String(120))
-    google_sub: Mapped[str] = mapped_column(String(255))
+    google_sub: Mapped[str | None] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(20), default="active")
     role: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"

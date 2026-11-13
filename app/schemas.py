@@ -3,7 +3,7 @@ from datetime import date, datetime
 from datetime import date as DateValue
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator, model_validator
 
 
 class UserResponse(BaseModel):
@@ -14,8 +14,36 @@ class UserResponse(BaseModel):
     full_name: str
     status: str
     role: str = "user"
-    google_sub: str
+    google_sub: str | None
+    has_password: bool = False
     created_at: datetime
+
+
+class EmailLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+    password: SecretStr = Field(min_length=1, max_length=128)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class RegisterRequest(EmailLoginRequest):
+    full_name: str = Field(min_length=1, max_length=120)
+    password: SecretStr = Field(min_length=8, max_length=128)
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def trim_name(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class PasswordUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: SecretStr | None = Field(default=None, min_length=1, max_length=128)
+    new_password: SecretStr = Field(min_length=8, max_length=128)
 
 class MealChatRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")

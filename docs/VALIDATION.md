@@ -1,5 +1,29 @@
 # Kiểm chứng backend
 
+## 2026-11-13 — Rà soát 32 task, email/mật khẩu song song Google
+
+- Android: 75 JVM tests thành công, APK và lintDebug thành công, không có Error/Fatal.
+- BE: 26 HTTP tests thành công, gồm 7 kiểm tra mới về đăng ký, login, đổi mật khẩu,
+  liên kết Google, dữ liệu cùng user ID, role Admin và tài khoản bị khóa. Database
+  SQLite trong bộ nhớ, Google/Groq được mock; không dùng DB/provider thật.
+- Web: 12 tests thành công (5 mới về hai phương thức login, role và thu hồi token
+  khi không lưu được phiên), TypeScript và production build thành công. Còn cảnh
+  báo bundle lớn có sẵn.
+- OpenAPI: 37 paths/55 operations. Đối chiếu route Retrofit Auth/App/Admin không
+  có endpoint thiếu ở BE. Một head 20261113_0012; sinh SQL upgrade/downgrade offline
+  cho đúng một revision mới, guard downgrade chạy trước thao tác xóa cột. DDL của
+  15 bảng biên dịch được cho PostgreSQL; chưa chạy migration thật.
+- Giữ Google, thêm email/password Argon2; chỉ liên kết sau xác thực, không tự gộp
+  email trùng. Không lưu mật khẩu ở Android/web, không trả hash hoặc input mật
+  khẩu trong lỗi validation. API/current-user/refresh chấp nhận cả hai phương thức.
+- Đã kiểm tra bảng đối chiếu 32 mã BL, đường vào UI, lịch dự kiến trong sprint và
+  giới hạn kiểm thử. Không đổi ngày Git thành ngày kế hoạch.
+- Lượt test BE đầu có assertion dùng từ “short” trùng mã lỗi “too_short”; đã đổi
+  mẫu test và xác nhận response không chứa input mật khẩu. Bộ tách task có lỗi
+  thứ tự khai báo một schema cha; đã sửa exporter và kiểm tra lại từng mốc.
+- Chưa kiểm thử email/Google trên emulator, camera, Groq, CORS thực tế hay DB
+  PostgreSQL của học sinh. Giáo viên tự cài requirements và upgrade sau khi pull.
+
 ## 2026-11-08 — Chat đầy đủ và Admin Android/web dùng chung
 
 - 19 tests thành công (7 mới): SQLite trong bộ nhớ, Google/Groq mock; còn 2

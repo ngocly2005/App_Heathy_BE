@@ -2,11 +2,28 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
 from jwt import InvalidTokenError
 
 from app.core.config import get_settings
 
 settings = get_settings()
+password_hasher = PasswordHasher()
+# Verify an Argon2 hash even when an email has no password account.
+_dummy_password_hash = password_hasher.hash(str(uuid4()))
+
+
+def hash_password(password: str) -> str:
+    return password_hasher.hash(password)
+
+
+def verify_password(password: str, encoded: str | None) -> bool:
+    try:
+        valid = password_hasher.verify(encoded or _dummy_password_hash, password)
+        return bool(encoded) and valid
+    except (InvalidHashError, VerificationError):
+        return False
 
 
 class TokenError(ValueError):

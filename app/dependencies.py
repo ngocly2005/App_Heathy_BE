@@ -37,7 +37,7 @@ def get_current_user(
         raise unauthorized() from exc
 
     user = db.get(User, user_id)
-    if user is None or user.status != "active" or not user.google_sub:
+    if user is None or user.status != "active" or not (user.google_sub or user.password_hash):
         raise unauthorized()
     return user
 

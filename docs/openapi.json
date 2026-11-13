@@ -6,6 +6,180 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Register",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password": {
+      "put": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Update Password",
+        "operationId": "update_password_api_v1_auth_password_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/link-google": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Link Google",
+        "operationId": "link_google_api_v1_auth_link_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/google": {
       "post": {
         "tags": [
@@ -2979,6 +3153,30 @@
         ],
         "title": "DiaryUpsert"
       },
+      "EmailLoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "format": "password",
+            "title": "Password",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "EmailLoginRequest"
+      },
       "FoodLogCreate": {
         "properties": {
           "food_id": {
@@ -3499,6 +3697,39 @@
         "type": "object",
         "title": "NutritionSettingsUpsert"
       },
+      "PasswordUpdateRequest": {
+        "properties": {
+          "current_password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1,
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "format": "password",
+            "title": "New Password",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "new_password"
+        ],
+        "title": "PasswordUpdateRequest"
+      },
       "PhotoAnalysisResponse": {
         "properties": {
           "items": {
@@ -3790,6 +4021,37 @@
           "refresh_token"
         ],
         "title": "RefreshRequest"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "format": "password",
+            "title": "Password",
+            "writeOnly": true
+          },
+          "full_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Full Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "full_name"
+        ],
+        "title": "RegisterRequest"
       },
       "SavedMealCreate": {
         "properties": {
@@ -4102,8 +4364,20 @@
             "default": "user"
           },
           "google_sub": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Google Sub"
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "default": false
           },
           "created_at": {
             "type": "string",
