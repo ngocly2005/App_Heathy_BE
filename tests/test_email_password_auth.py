@@ -6,10 +6,60 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.google import GoogleIdentity
-from app.core.security import verify_password
+from app.core.security import hash_password, verify_password
 from app.models import User
+import pytest
 
 PASSWORD = "a strong passphrase 123"
+
+
+@pytest.mark.parametrize("old_password", ["x", " " * 8])
+def test_existing_passwords_remain_usable_after_new_password_validation(api, old_password):
+    with Session(api.test_engine) as db:
+        db.get(User, 1).password_hash = hash_password(old_password)
+        db.commit()
+    tokens = body(api.post("/api/v1/auth/login", json={"email": "person1@example.com", "password": old_password}))
+    body(api.put("/api/v1/auth/password", headers=bearer(tokens), json={"current_password": old_password, "new_password": PASSWORD}))
+
+
+@pytest.mark.parametrize("email", ["Name+tag@Example.COM", "o'connor@example.com", "a_b-c@example.co.uk", "ngọc@example.com", "a@bücher.de"])
+def test_valid_email_forms_are_not_restricted_to_gmail(api, email):
+    tokens = body(api.post("/api/v1/auth/register", json={"email": email, "full_name": "Ngọc Lý", "password": PASSWORD}), 201)
+    assert body(api.get("/api/v1/auth/me", headers=bearer(tokens)))["role"] == "user"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("email", "thanhthien55200gmail.com"), ("email", "a@@gmail.com"),
+    ("email", "a..b@gmail.com"), ("email", "a@-example.com"),
+    ("full_name", " \u00a0 "), ("full_name", "x" * 121), ("full_name", "A\nB"),
+    ("full_name", "A\u007fB"), ("password", "5500000"), ("password", "x" * 129),
+    ("password", " " * 8), ("password", "\u00a0" * 8), ("password", "abcd\nefgh"),
+    ("password", "abcd\u0000efgh"), ("password", "abcd\u0085efgh"),
+])
+def test_registration_rejects_invalid_fields_without_issuing_session(api, field, value):
+    payload = {"email": "new@example.com", "full_name": "Ngọc Lý", "password": PASSWORD, field: value}
+    response = api.post("/api/v1/auth/register", json=payload)
+    assert response.status_code == 422
+    assert PASSWORD not in response.text and '"input"' not in response.text
+    assert "access_token" not in response.text
+    with Session(api.test_engine) as db:
+        assert db.scalar(select(User).where(User.email == "new@example.com")) is None
+
+
+@pytest.mark.parametrize("password,name", [("55000000", "Ngọc Lý"), ("x" * 128, "N" * 120), ("😀" * 128, "😀" * 120), (" 12345678 ", " Name ")])
+def test_registration_exact_bounds_unicode_and_password_preservation(api, password, name):
+    tokens = body(api.post("/api/v1/auth/register", json={"email": " NEW@Example.COM ", "full_name": name, "password": password}), 201)
+    me = body(api.get("/api/v1/auth/me", headers=bearer(tokens)))
+    assert me["full_name"] == name.strip() and me["email"] == "new@example.com"
+    body(api.post("/api/v1/auth/login", json={"email": me["email"], "password": password}))
+
+
+@pytest.mark.parametrize("password", [" " * 8, "abcd\nefgh", "x" * 129])
+def test_password_update_rejects_invalid_new_secret_and_keeps_existing_login(api, password):
+    tokens = register(api)
+    response = api.put("/api/v1/auth/password", headers=bearer(tokens), json={"current_password": PASSWORD, "new_password": password})
+    assert response.status_code == 422 and '"input"' not in response.text and PASSWORD not in response.text
+    body(api.post("/api/v1/auth/login", json={"email": "new@example.com", "password": PASSWORD}))
 
 
 def register(api, email="new@example.com"):

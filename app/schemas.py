@@ -37,13 +37,36 @@ class RegisterRequest(EmailLoginRequest):
     @field_validator("full_name", mode="before")
     @classmethod
     def trim_name(cls, value):
-        return value.strip() if isinstance(value, str) else value
+        if isinstance(value, str):
+            if any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in value):
+                raise ValueError("Name must not contain control characters")
+            return value.strip()
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def check_new_password(cls, value):
+        return validate_new_password(value)
 
 
 class PasswordUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: SecretStr | None = Field(default=None, min_length=1, max_length=128)
     new_password: SecretStr = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password(cls, value):
+        return validate_new_password(value)
+
+
+def validate_new_password(value: SecretStr) -> SecretStr:
+    password = value.get_secret_value()
+    if not password.strip():
+        raise ValueError("Password must not consist only of whitespace")
+    if any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in password):
+        raise ValueError("Password must not contain control characters")
+    return value
 
 class MealChatRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
