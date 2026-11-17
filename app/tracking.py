@@ -20,6 +20,7 @@ from app.models import (
     DiaryEntry,
     WeightEntry,
     Food,
+    UserFood,
     FoodLog,
     HealthProfile,
     User,
@@ -51,11 +52,17 @@ def list_foods(
     current_user: CurrentUser,
     db: DbSession,
     query: str | None = Query(default=None, alias="q", max_length=100),
-) -> list[Food]:
+) -> list[FoodResponse]:
     statement = select(Food).where(Food.is_active.is_(True))
     if query:
         statement = statement.where(Food.name.icontains(query, autoescape=True))
-    return list(db.scalars(statement.order_by(Food.name).limit(50)))
+    personal = select(UserFood).where(UserFood.user_id == current_user.id)
+    if query:
+        personal = personal.where(UserFood.name.icontains(query, autoescape=True))
+    rows = list(db.scalars(statement.order_by(Food.name).limit(50)))
+    rows.extend(db.scalars(personal.order_by(UserFood.name).limit(50)))
+    rows.sort(key=lambda item: (item.name.casefold(), item.is_custom, item.id))
+    return [FoodResponse.model_validate(item) for item in rows[:50]]
 
 
 @router.post(
@@ -68,14 +75,19 @@ def create_food_log(
     current_user: CurrentUser,
     db: DbSession,
 ) -> FoodLog:
-    food = db.get(Food, payload.food_id)
-    if food is None or not food.is_active:
-        raise HTTPException(status_code=404, detail="Food not found")
+    if payload.custom_food_id is not None:
+        food = db.get(UserFood, payload.custom_food_id)
+        if food is None or food.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Food not found")
+    else:
+        food = db.get(Food, payload.food_id)
+        if food is None or not food.is_active:
+            raise HTTPException(status_code=404, detail="Food not found")
 
     grams = payload.grams
     food_log = FoodLog(
         user_id=current_user.id,
-        food_id=food.id,
+        food_id=None if payload.custom_food_id is not None else food.id,
         log_date=payload.log_date,
         meal_type=payload.meal_type,
         meal_time=payload.meal_time,

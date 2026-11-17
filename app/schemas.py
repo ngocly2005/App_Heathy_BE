@@ -151,14 +151,33 @@ class FoodResponse(BaseModel):
     protein_per_100g: float
     carb_per_100g: float
     fat_per_100g: float
+    is_custom: bool = False
+    has_image: bool = False
+
+
+class UserFoodInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
+
+    name: str = Field(min_length=1, max_length=160)
+    calories_per_100g: float = Field(ge=0, le=20000)
+    protein_per_100g: float = Field(ge=0, le=2000)
+    carb_per_100g: float = Field(ge=0, le=3000)
+    fat_per_100g: float = Field(ge=0, le=2000)
 
 
 class FoodLogCreate(BaseModel):
-    food_id: int
+    food_id: int | None = Field(default=None, gt=0)
+    custom_food_id: int | None = Field(default=None, gt=0)
     grams: float = Field(ge=0.01, le=10000)
     meal_type: MealType
     log_date: date = Field(default_factory=business_today)
     meal_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    @model_validator(mode="after")
+    def exactly_one_food(self):
+        if (self.food_id is None) == (self.custom_food_id is None):
+            raise ValueError("Choose exactly one catalog or personal food")
+        return self
 
 
 class FoodLogResponse(BaseModel):

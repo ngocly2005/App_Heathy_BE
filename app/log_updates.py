@@ -55,9 +55,16 @@ def create_activity(payload: ActivityLogCreate, current_user: CurrentUser, db: D
 
 
 @router.get("/activity-logs", response_model=list[ActivityLogResponse])
-def list_activity(current_user: CurrentUser, db: DbSession, log_date: date = Query(alias="date")):
-    return list(db.scalars(select(ActivityLog).where(ActivityLog.user_id == current_user.id,
-                           ActivityLog.log_date == log_date).order_by(ActivityLog.id)))
+def list_activity(current_user: CurrentUser, db: DbSession,
+                  log_date: date | None = Query(default=None, alias="date"),
+                  limit: int = Query(default=100, ge=1, le=200),
+                  offset: int = Query(default=0, ge=0)):
+    statement = select(ActivityLog).where(ActivityLog.user_id == current_user.id)
+    if log_date is not None:
+        statement = statement.where(ActivityLog.log_date == log_date).order_by(ActivityLog.id)
+    else:
+        statement = statement.order_by(ActivityLog.log_date.desc(), ActivityLog.id.desc())
+    return list(db.scalars(statement.offset(offset).limit(limit)))
 
 
 @router.put("/activity-logs/{log_id}", response_model=ActivityLogResponse)

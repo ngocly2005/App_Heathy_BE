@@ -58,6 +58,98 @@ def body(response, status=200):
     return response.json()
 
 
+def test_personal_food_crud_logging_and_saved_recipe(api):
+    payload = {"name": "Bún bò chay", "calories_per_100g": 115,
+               "protein_per_100g": 4, "carb_per_100g": 20, "fat_per_100g": 2}
+    created = body(api.post("/api/v1/custom-foods", json=payload), 201)
+    assert created["is_custom"] is True and created["has_image"] is False
+    food_id = created["id"]
+    assert body(api.get("/api/v1/foods", params={"q": "Bún bò chay"}))[0]["id"] == food_id
+    assert len(body(api.get("/api/v1/custom-foods"))) == 1
+    assert body(api.get("/api/v1/custom-foods", headers=api.user_headers(2))) == []
+    assert api.put(f"/api/v1/custom-foods/{food_id}", headers=api.user_headers(2), json=payload).status_code == 404
+    assert api.post("/api/v1/food-logs", headers=api.user_headers(2), json={
+        "custom_food_id": food_id, "grams": 100, "meal_type": "lunch"}).status_code == 404
+    assert api.post("/api/v1/food-logs", json={"food_id": 1, "custom_food_id": food_id,
+        "grams": 100, "meal_type": "lunch"}).status_code == 422
+    log = body(api.post("/api/v1/food-logs", json={"custom_food_id": food_id,
+        "grams": 200, "meal_type": "lunch", "log_date": TODAY}), 201)
+    assert log["food_id"] is None and log["calories_kcal"] == 230
+    changed = body(api.put(f"/api/v1/custom-foods/{food_id}", json={**payload,
+        "name": "Bún bò chay mới", "calories_per_100g": 120}))
+    assert changed["name"] == "Bún bò chay mới"
+    recipe = body(api.post("/api/v1/saved-meals", json={"name": "Bữa chay", "items": [{
+        "food_name": changed["name"], "grams": 200, "calories_per_100g": 120,
+        "protein_per_100g": 4, "carb_per_100g": 20, "fat_per_100g": 2}]}), 201)
+    assert recipe["items"][0]["food_name"] == "Bún bò chay mới"
+    revised = body(api.put(f"/api/v1/saved-meals/{recipe['id']}", json={
+        "name": "Bữa chay có cơm", "items": [
+            {"food_name": changed["name"], "grams": 150, "calories_per_100g": 120,
+             "protein_per_100g": 4, "carb_per_100g": 20, "fat_per_100g": 2},
+            {"food_id": 1, "grams": 80}]}))
+    assert revised["name"] == "Bữa chay có cơm" and len(revised["items"]) == 2
+    assert len(body(api.post(f"/api/v1/saved-meals/{recipe['id']}/log", json={
+        "meal_type": "dinner", "log_date": TODAY}))) == 2
+    assert api.post("/api/v1/custom-foods", json=payload | {"name": "Bún bò chay mới"}).status_code == 409
+    assert api.delete(f"/api/v1/custom-foods/{food_id}").status_code == 204
+    assert body(api.get("/api/v1/food-logs", params={"date": TODAY}))[0]["food_name"] == "Bún bò chay"
+    assert body(api.get(f"/api/v1/saved-meals/{recipe['id']}"))["items"][0]["food_name"] == "Bún bò chay mới"
+
+
+def test_food_images_are_local_validated_and_private(api, tmp_path):
+    from app.core.config import get_settings
+    settings = get_settings()
+    old_dir = settings.food_media_dir
+    settings.food_media_dir = str(tmp_path)
+    try:
+        payload = {"name": "Ảnh món riêng", "calories_per_100g": 50,
+                   "protein_per_100g": 1, "carb_per_100g": 10, "fat_per_100g": 0}
+        personal = body(api.post("/api/v1/custom-foods", json=payload), 201)
+        food_id = personal["id"]
+        photo = io.BytesIO()
+        Image.new("RGB", (12, 8), "red").save(photo, format="PNG")
+        image = photo.getvalue()
+        assert api.put(f"/api/v1/custom-foods/{food_id}/image", files={
+            "image": ("bad.png", b"not a photo", "image/png")}).status_code == 422
+        assert api.put(f"/api/v1/custom-foods/{food_id}/image", headers=api.user_headers(2), files={
+            "image": ("food.png", image, "image/png")}).status_code == 404
+        body(api.put(f"/api/v1/custom-foods/{food_id}/image", files={
+            "image": ("food.png", image, "image/png")}))
+        served = api.get(f"/api/v1/custom-foods/{food_id}/image")
+        assert served.status_code == 200 and served.headers["content-type"] == "image/jpeg"
+        assert len(list(tmp_path.glob("*.jpg"))) == 1
+        first_file = next(tmp_path.glob("*.jpg"))
+        body(api.put(f"/api/v1/custom-foods/{food_id}/image", files={
+            "image": ("replacement.png", image, "image/png")}))
+        assert not first_file.exists() and len(list(tmp_path.glob("*.jpg"))) == 1
+        assert api.get(f"/api/v1/custom-foods/{food_id}/image", headers=api.user_headers(2)).status_code == 404
+        assert api.put("/api/v1/admin/foods/1/image", files={"image": ("x.png", image, "image/png")}).status_code == 403
+        body(api.put("/api/v1/admin/foods/1/image", headers=api.user_headers(3), files={
+            "image": ("x.png", image, "image/png")}))
+        assert api.get("/api/v1/foods/1/image").status_code == 200
+        assert api.delete(f"/api/v1/custom-foods/{food_id}/image").status_code == 204
+        assert api.get(f"/api/v1/custom-foods/{food_id}/image").status_code == 404
+        assert len(list(tmp_path.glob("*.jpg"))) == 1  # catalog image remains
+    finally:
+        settings.food_media_dir = old_dir
+
+
+def test_activity_history_can_be_reviewed_and_owned(api):
+    body(api.put("/api/v1/profile", json=PROFILE))
+    log = body(api.post("/api/v1/activity-logs", json={
+        "activity_type_id": 1, "duration_minutes": 20, "log_date": YESTERDAY}), 201)
+    assert body(api.get("/api/v1/activity-logs"))[0]["id"] == log["id"]
+    assert body(api.get("/api/v1/activity-logs", params={"limit": 1, "offset": 1})) == []
+    assert body(api.get("/api/v1/activity-logs", params={"date": TODAY})) == []
+    assert body(api.get("/api/v1/activity-logs", headers=api.user_headers(2))) == []
+    assert api.put(f"/api/v1/activity-logs/{log['id']}", headers=api.user_headers(2),
+                   json={"duration_minutes": 30}).status_code == 404
+    changed = body(api.put(f"/api/v1/activity-logs/{log['id']}", json={"duration_minutes": 30}))
+    assert changed["calories_burned"] > log["calories_burned"]
+    assert api.delete(f"/api/v1/activity-logs/{log['id']}").status_code == 204
+    assert body(api.get("/api/v1/activity-logs")) == []
+
+
 def test_profile_targets_macros_and_validation(api):
     profile = body(api.put("/api/v1/profile", json=PROFILE))
     assert profile["bmi"] == 22.04

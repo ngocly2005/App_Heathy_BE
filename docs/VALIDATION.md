@@ -1,5 +1,17 @@
 # Kiểm chứng backend
 
+## 2026-11-17 — Món cá nhân, ảnh local và nhật ký tập luyện
+
+- **59 HTTP tests đạt** trên SQLite bộ nhớ. Kiểm tra CRUD món cá nhân, chặn
+  truy cập chéo tài khoản, ghi nhật ký theo snapshot, tạo/sửa/thêm nhanh bữa
+  từ món đã chọn; ảnh sai định dạng bị từ chối, ảnh được thay và xóa trên ổ đĩa.
+- Kiểm tra quyền: ảnh món cá nhân chỉ chủ tài khoản xem/sửa; ảnh catalog chỉ
+  Admin tải lên; nhật ký vận động phân trang, sửa/xóa đúng người dùng.
+- `alembic heads` trả một head `20261117_0013`; đã sinh SQL PostgreSQL offline
+  cho toàn chuỗi. Chưa chạy migration trên PostgreSQL thật và chưa thử ổ đĩa BE
+  trong môi trường triển khai. Giáo viên sao lưu DB và chạy upgrade theo README.
+- 2 cảnh báo deprecation từ thư viện test; không có test lỗi.
+
 ## 2026-11-13 — Giữ phiên khi liên kết Google không hợp lệ
 
 - 27 tests thành công. Khi Bearer app hợp lệ nhưng Google proof gửi để liên kết

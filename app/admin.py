@@ -47,7 +47,10 @@ def serialize(resource, row):
     if resource == "ai-logs":
         return AIInteractionResponse.model_validate(row).model_dump(mode="json")
     names = FoodInput.model_fields if resource == "foods" else ActivityInput.model_fields
-    return {"id": row.id, **{key: getattr(row, key) for key in names}}
+    result = {"id": row.id, **{key: getattr(row, key) for key in names}}
+    if resource == "foods":
+        result["has_image"] = row.has_image
+    return result
 
 
 def date_range(date_from, date_to):

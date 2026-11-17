@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     groq_vision_model: str | None = None
     gemini_api_key: SecretStr | None = None
     max_image_size_mb: int = Field(default=8, ge=1, le=20)
+    food_media_dir: str = "./media/food"
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

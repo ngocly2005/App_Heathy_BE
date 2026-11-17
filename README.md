@@ -28,7 +28,29 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
   `["http://localhost:5173","http://127.0.0.1:5173"]`.
 - `TIME_ZONE=Asia/Bangkok`: ngày nghiệp vụ UTC+7; timestamp lưu theo UTC.
 
-## Một migration mới, giáo viên tự chạy
+## Bổ sung món cá nhân và ảnh — 17/11/2026
+
+Revision mới duy nhất `20261117_0013` nối sau `20261113_0012`: tạo `user_foods` và
+thêm tên tệp ảnh cho catalog `foods`. Không sửa lịch sử migration đã áp dụng.
+Sau khi sao lưu DB, giáo viên chạy `alembic current`, `alembic heads`, rồi
+`alembic upgrade head`. FE mới cần revision này trước khi dùng màn Tìm món ăn.
+
+`FOOD_MEDIA_DIR` là thư mục ảnh **trên máy chạy BE** (mặc định `./media/food`),
+không phải thư mục trên điện thoại và không dùng nhà cung cấp bên thứ ba.
+Thư mục này cần quyền ghi, dung lượng và sao lưu cùng DB; khi triển khai nhiều
+máy BE, mọi máy phải dùng cùng kho tệp bền vững. Ảnh được kiểm tra loại/kích
+thước, chuẩn hóa thành JPEG và chỉ tải qua API có xác thực. Chỉ chủ tài khoản
+được xem/sửa ảnh món riêng; chỉ Admin được tải ảnh lên món catalog.
+
+Android: **Tìm món ăn → Tạo món** nhập số liệu/100 g, sau khi lưu chọn món để
+**Thêm ảnh**. **Thực đơn đã lưu → Tạo bữa ăn từ các món của tôi** cho phép chọn
+món trực tiếp và chỉnh thành phần bữa đã lưu, không cần ghi vào nhật ký trước.
+API `GET/POST/PUT/DELETE /custom-foods`, `PUT/GET/DELETE /custom-foods/{id}/image`,
+`PUT /admin/foods/{id}/image`, `GET /foods/{id}/image`. Nhật ký thức ăn vẫn giữ
+snapshot khi sửa/xóa món riêng. API `GET /activity-logs` không truyền ngày trả
+100 hoạt động mới nhất để hiển thị Nhật ký luyện tập.
+
+## Chuỗi migration, giáo viên tự chạy
 
 Đợt 13/11 thêm đúng một revision `20261113_0012`, sau `20261105_0011`.
 Nó thêm password_hash Argon2 và cho phép google_sub rỗng với tài khoản email.
@@ -41,9 +63,10 @@ alembic current
 alembic heads
 ```
 
-Source có head `20261113_0012`. Nếu DB đang ở `20261105_0011`, chỉ revision mới
-được áp dụng. DB ở `20261006_0010` sẽ áp dụng cả hai revision sau nó. Sau khi kiểm tra
-cấu hình và sao lưu, giáo viên thực hiện:
+Source hiện có **một head `20261117_0013`**. Nếu DB đang ở `20261113_0012`,
+chỉ revision ảnh/món cá nhân mới được áp dụng. Nếu DB đang ở `20261105_0011`,
+Alembic sẽ áp dụng lần lượt 0012 và 0013. Sau khi kiểm tra cấu hình và sao lưu,
+giáo viên thực hiện:
 
 ```powershell
 alembic upgrade head

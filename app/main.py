@@ -15,6 +15,8 @@ from app.ai import router as ai_router
 from app.settings import router as settings_router
 from app.log_updates import router as log_updates_router
 from app.admin import router as admin_router
+from app.custom_foods import router as custom_foods_router
+from app.food_media import router as food_media_router
 settings = get_settings()
 
 app = FastAPI(
@@ -45,6 +47,8 @@ app.include_router(ai_router, prefix=settings.api_v1_prefix)
 app.include_router(settings_router, prefix=settings.api_v1_prefix)
 app.include_router(log_updates_router, prefix=settings.api_v1_prefix)
 app.include_router(admin_router, prefix=settings.api_v1_prefix)
+app.include_router(custom_foods_router, prefix=settings.api_v1_prefix)
+app.include_router(food_media_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["system"])

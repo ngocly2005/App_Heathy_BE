@@ -110,6 +110,45 @@ class Food(Base):
     carb_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
     fat_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    image_filename: Mapped[str | None] = mapped_column(String(80))
+
+    @property
+    def is_custom(self) -> bool:
+        return False
+
+    @property
+    def has_image(self) -> bool:
+        return self.image_filename is not None
+
+
+class UserFood(Base):
+    __tablename__ = "user_foods"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_user_food_owner_name"),
+        CheckConstraint("calories_per_100g >= 0", name="ck_user_food_calories"),
+        CheckConstraint("protein_per_100g >= 0", name="ck_user_food_protein"),
+        CheckConstraint("carb_per_100g >= 0", name="ck_user_food_carbs"),
+        CheckConstraint("fat_per_100g >= 0", name="ck_user_food_fat"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    calories_per_100g: Mapped[float] = mapped_column(Numeric(8, 2))
+    protein_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
+    carb_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
+    fat_per_100g: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
+    image_filename: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    @property
+    def is_custom(self) -> bool:
+        return True
+
+    @property
+    def has_image(self) -> bool:
+        return self.image_filename is not None
 
 
 class FoodLog(Base):
