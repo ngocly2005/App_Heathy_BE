@@ -436,6 +436,7 @@ class PhotoAnalysisHistoryResponse(BaseModel):
     status: Literal["success", "error"]
     analysis: PhotoAnalysisResponse | None
     error_code: int | None
+    request_id: str | None = None
 
 
 class PhotoConfirmRequest(BaseModel):

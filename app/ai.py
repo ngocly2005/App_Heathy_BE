@@ -1,6 +1,7 @@
 from app.core.dates import today as business_today
 import json
 from datetime import date
+from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Query, status
 from sqlalchemy import select
@@ -111,6 +112,7 @@ def analyze_photo(
     db: DbSession,
     image: UploadFile = File(...),
     context_date: date | None = Query(default=None, alias="date"),
+    request_id: UUID | None = Query(default=None),
 ) -> PhotoAnalysisResponse:
     max_bytes = get_settings().max_image_size_mb * 1024 * 1024
     try:
@@ -120,7 +122,8 @@ def analyze_photo(
     if len(data) > max_bytes:
         raise HTTPException(status_code=413, detail="Image exceeds size limit")
     content_type = validate_image(data, image.content_type)
-    return recorded_ai(db, current_user.id, "photo", context_date or business_today(), None,
+    request_marker = f"photo_request:{request_id}" if request_id is not None else None
+    return recorded_ai(db, current_user.id, "photo", context_date or business_today(), request_marker,
         lambda: ask_groq(system_instruction=PHOTO_PROMPT, prompt="Estimate this meal.",
             response_schema=PhotoAnalysisResponse, image_data=data, image_mime_type=content_type))
 
@@ -130,18 +133,22 @@ def latest_photo_analysis(
     current_user: CurrentUser,
     db: DbSession,
     context_date: date = Query(alias="date"),
+    request_id: UUID | None = Query(default=None),
 ) -> PhotoAnalysisHistoryResponse | None:
-    row = db.scalar(
-        select(AIInteraction).where(
+    statement = select(AIInteraction).where(
             AIInteraction.user_id == current_user.id,
             AIInteraction.kind == "photo",
             AIInteraction.context_date == context_date,
-        ).order_by(AIInteraction.id.desc()).limit(1)
-    )
+        )
+    if request_id is not None:
+        statement = statement.where(AIInteraction.question == f"photo_request:{request_id}")
+    row = db.scalar(statement.order_by(AIInteraction.id.desc()).limit(1))
     if row is None:
         return None
     return PhotoAnalysisHistoryResponse(
         id=row.id, status=row.status, error_code=row.error_code,
+        request_id=row.question.removeprefix("photo_request:")
+            if row.question and row.question.startswith("photo_request:") else None,
         analysis=PhotoAnalysisResponse.model_validate(row.response) if row.response is not None else None)
 
 

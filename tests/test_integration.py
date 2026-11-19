@@ -378,11 +378,23 @@ def test_ai_history_photo_and_errors_are_isolated(api, monkeypatch):
     photo = io.BytesIO()
     Image.new("RGB",(8,8)).save(photo,format="PNG")
     assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY})) is None
-    body(api.post("/api/v1/ai/photo/analyze",params={"date":YESTERDAY},files={"image":("meal.png",photo.getvalue(),"image/png")}))
+    request_id = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+    another_id = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
+    assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY,
+        "request_id": request_id})) is None
+    body(api.post("/api/v1/ai/photo/analyze",params={"date":YESTERDAY,
+        "request_id":request_id},files={"image":("meal.png",photo.getvalue(),"image/png")}))
     latest = body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY}))
     assert latest["id"] > 0 and latest["analysis"]["notes"] == "No food"
+    assert latest["request_id"] == request_id
+    assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY,
+        "request_id": request_id}))["id"] == latest["id"]
+    assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY,
+        "request_id": another_id})) is None
     assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY},
         headers=api.user_headers(2))) is None
+    assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY,
+        "request_id": request_id}, headers=api.user_headers(2))) is None
     assert body(api.get("/api/v1/food-logs",params={"date":YESTERDAY})) == []
     assert api.post("/api/v1/ai/photo/analyze",files={"image":("x.png",b"not an image","image/png")}).status_code == 422
     confirmed = body(api.post("/api/v1/ai/photo/confirm",json={"log_date":YESTERDAY,"meal_type":"lunch","meal_time":"12:00",
