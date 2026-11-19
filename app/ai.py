@@ -16,6 +16,7 @@ from app.schemas import (
     MealChatRequest,
     MealChatResponse,
     PhotoAnalysisResponse,
+    PhotoAnalysisHistoryResponse,
     PhotoConfirmRequest,
     PhotoConfirmResponse,
     AIInteractionResponse,
@@ -122,6 +123,26 @@ def analyze_photo(
     return recorded_ai(db, current_user.id, "photo", context_date or business_today(), None,
         lambda: ask_groq(system_instruction=PHOTO_PROMPT, prompt="Estimate this meal.",
             response_schema=PhotoAnalysisResponse, image_data=data, image_mime_type=content_type))
+
+
+@router.get("/photo/latest", response_model=PhotoAnalysisHistoryResponse | None)
+def latest_photo_analysis(
+    current_user: CurrentUser,
+    db: DbSession,
+    context_date: date = Query(alias="date"),
+) -> PhotoAnalysisHistoryResponse | None:
+    row = db.scalar(
+        select(AIInteraction).where(
+            AIInteraction.user_id == current_user.id,
+            AIInteraction.kind == "photo",
+            AIInteraction.context_date == context_date,
+        ).order_by(AIInteraction.id.desc()).limit(1)
+    )
+    if row is None:
+        return None
+    return PhotoAnalysisHistoryResponse(
+        id=row.id, status=row.status, error_code=row.error_code,
+        analysis=PhotoAnalysisResponse.model_validate(row.response) if row.response is not None else None)
 
 
 @router.post(

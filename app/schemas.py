@@ -60,6 +60,27 @@ class PasswordUpdateRequest(BaseModel):
         return validate_new_password(value)
 
 
+class PasswordResetStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class PasswordResetFinishRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=20, max_length=2048)
+    new_password: SecretStr = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password(cls, value):
+        return validate_new_password(value)
+
+
 def validate_new_password(value: SecretStr) -> SecretStr:
     password = value.get_secret_value()
     if not password.strip():
@@ -221,9 +242,21 @@ class ActivityTypeResponse(BaseModel):
 
 
 class ActivityLogCreate(BaseModel):
-    activity_type_id: int
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
+
+    activity_type_id: int | None = Field(default=None, gt=0)
+    manual_name: str | None = Field(default=None, min_length=1, max_length=120)
+    manual_met: float | None = Field(default=None, ge=0.01, le=30)
     duration_minutes: int = Field(gt=0, le=1440)
     log_date: date = Field(default_factory=business_today)
+
+    @model_validator(mode="after")
+    def activity_source(self):
+        catalog = self.activity_type_id is not None
+        manual = self.manual_name is not None and self.manual_met is not None
+        if catalog == manual or (catalog and (self.manual_name is not None or self.manual_met is not None)):
+            raise ValueError("Choose one catalog activity or a manual name and MET")
+        return self
 
 
 class ActivityLogResponse(BaseModel):
@@ -396,6 +429,13 @@ class PhotoAnalysisResponse(BaseModel):
     items: list[PhotoFoodItem] = Field(max_length=20)
     notes: str
     disclaimer: str
+
+
+class PhotoAnalysisHistoryResponse(BaseModel):
+    id: int
+    status: Literal["success", "error"]
+    analysis: PhotoAnalysisResponse | None
+    error_code: int | None
 
 
 class PhotoConfirmRequest(BaseModel):

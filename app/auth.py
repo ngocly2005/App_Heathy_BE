@@ -1,17 +1,26 @@
 from datetime import UTC, datetime
+from hashlib import sha256
+import hmac
+import logging
+from threading import Lock
+from time import monotonic
 
-from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.google import verify_google_token
+from app.core.config import get_settings
+from app.core.mail import reset_mail_configured, send_password_reset_mail
 from app.core.security import (
     TokenError,
     create_access_token,
     create_refresh_token,
+    create_password_reset_token,
     decode_token,
     hash_password,
     password_hasher,
+    reset_password_fingerprint,
     verify_password,
 )
 from app.dependencies import CurrentUser, DbSession
@@ -21,6 +30,8 @@ from app.schemas import (
     EmailLoginRequest,
     RegisterRequest,
     PasswordUpdateRequest,
+    PasswordResetStartRequest,
+    PasswordResetFinishRequest,
     MessageResponse,
     RefreshRequest,
     TokenResponse,
@@ -28,6 +39,31 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+logger = logging.getLogger(__name__)
+_reset_cooldown: dict[str, float] = {}
+_reset_cooldown_lock = Lock()
+
+
+def _allow_reset_request(email: str, seconds: int) -> bool:
+    if seconds <= 0:
+        return True
+    key = sha256(email.encode()).hexdigest()
+    now = monotonic()
+    with _reset_cooldown_lock:
+        if len(_reset_cooldown) > 4096:
+            _reset_cooldown.clear()
+        if _reset_cooldown.get(key, 0) > now:
+            return False
+        _reset_cooldown[key] = now + seconds
+        return True
+
+
+def _deliver_reset_code(recipient: str, token: str) -> None:
+    try:
+        send_password_reset_mail(recipient, token, get_settings())
+    except Exception as error:
+        # Never log the token or recipient; the public response is identical.
+        logger.warning("Password reset email delivery failed (%s)", type(error).__name__)
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
@@ -72,6 +108,42 @@ def update_password(payload: PasswordUpdateRequest, current_user: CurrentUser, d
     user.password_hash = hash_password(payload.new_password.get_secret_value())
     db.commit()
     return MessageResponse(message="Password updated")
+
+
+@router.post("/password/forgot", response_model=MessageResponse, status_code=202)
+def forgot_password(payload: PasswordResetStartRequest, background_tasks: BackgroundTasks,
+                    db: DbSession) -> MessageResponse:
+    settings = get_settings()
+    if not reset_mail_configured(settings):
+        # Independent of account existence, and honest about missing delivery.
+        raise HTTPException(503, "Password reset email is not configured")
+    email = str(payload.email)
+    if _allow_reset_request(email, settings.password_reset_cooldown_seconds):
+        user = db.scalar(select(User).where(User.email == email))
+        if user is not None and user.status == "active" and user.password_hash:
+            token = create_password_reset_token(user.id, user.password_hash)
+            background_tasks.add_task(_deliver_reset_code, email, token)
+    return MessageResponse(message="If this email has a password account, a reset code will be sent")
+
+
+@router.post("/password/reset", response_model=MessageResponse)
+def reset_password(payload: PasswordResetFinishRequest, db: DbSession) -> MessageResponse:
+    invalid = HTTPException(400, "Invalid or expired reset code")
+    try:
+        claims = decode_token(payload.token, expected_type="password_reset")
+        user_id = int(str(claims["sub"]))
+        fingerprint = str(claims["pwd"])
+    except (TokenError, KeyError, TypeError, ValueError) as error:
+        raise invalid from error
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True))
+    if (user is None or user.status != "active" or not user.password_hash or
+            not hmac.compare_digest(fingerprint, reset_password_fingerprint(user.password_hash))):
+        raise invalid
+    user.password_hash = hash_password(payload.new_password.get_secret_value())
+    db.execute(update(RefreshToken).where(RefreshToken.user_id == user.id,
+        RefreshToken.revoked_at.is_(None)).values(revoked_at=datetime.now(UTC)))
+    db.commit()
+    return MessageResponse(message="Password reset; sign in with the new password")
 
 
 @router.post("/link-google", response_model=UserResponse)

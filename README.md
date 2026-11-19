@@ -118,14 +118,27 @@ không cần migration riêng. Chưa chạy upgrade database thật.
   mật khẩu. Google-only có thể thêm mật khẩu khi đang đăng nhập.
 - `POST /auth/link-google`: cần Bearer và id_token Google đã xác minh, cùng email.
   Không tự gộp chỉ vì email trùng; đăng nhập bằng phương thức hiện có trước.
+- `POST /auth/password/forgot`: email, gửi mã đặt lại nếu là tài khoản email/mật khẩu.
+  API trả cùng một câu cho email tồn tại hoặc không tồn tại, tránh lộ danh sách tài khoản.
+- `POST /auth/password/reset`: mã từ email và `new_password`; mã ký, có thời hạn,
+  chỉ dùng một lần. Sau khi đặt lại, các refresh token cũ bị thu hồi; access JWT
+  đã phát hành có thể còn hiệu lực tối đa 30 phút mặc định.
 - Android: Tài khoản → Bảo mật tài khoản để thêm/đổi mật khẩu hoặc liên kết Google.
+  Ở màn đăng nhập, bấm **Quên mật khẩu?** rồi nhập email, dán mã và mật khẩu mới.
   Web Admin đăng nhập được bằng email hoặc Google, luôn kiểm tra role từ BE.
 
 Email được chuẩn hóa; mật khẩu giữ nguyên cả khoảng trắng, chỉ lưu hash ở BE,
 không trả hash/mật khẩu trong API hoặc lỗi validation. Hai phương thức đã liên kết
-dùng cùng user ID, hồ sơ, quyền và nhật ký. Các phiên hiện có vẫn tồn tại sau đổi
-mật khẩu; đăng xuất từng thiết bị khi cần. Không có quên mật khẩu/gửi email xác minh
-trong backlog này. Thư viện hash: [argon2-cffi](https://argon2-cffi.readthedocs.io/en/stable/api.html).
+dùng cùng user ID, hồ sơ, quyền và nhật ký. Mã quên mật khẩu chỉ gửi qua SMTP khi
+`SMTP_HOST` và `SMTP_FROM_EMAIL` đã cấu hình trong `.env`. Điền thêm
+`SMTP_USERNAME`, `SMTP_PASSWORD` nếu nhà cung cấp yêu cầu đăng nhập;
+`SMTP_PORT=587`, `SMTP_STARTTLS=true` là cấu hình mặc định. Sau khi thay `.env`,
+khởi động lại BE. Không cần thêm bảng hoặc Alembic cho luồng này. Khi chưa cấu hình,
+API quên mật khẩu trả 503 cho mọi email và Android báo cần liên hệ quản trị viên.
+Chỉ thử bằng hộp thư của mình; không đưa mật khẩu SMTP lên Git. Mã mặc định hết hạn
+sau 15 phút, yêu cầu gửi mã cùng email cách nhau tối thiểu 60 giây trên mỗi tiến trình
+BE. Khi chạy nhiều tiến trình, nên đặt thêm giới hạn yêu cầu ở reverse proxy.
+Thư viện hash: [argon2-cffi](https://argon2-cffi.readthedocs.io/en/stable/api.html).
 
 ## API chính
 
@@ -133,7 +146,7 @@ Tất cả đường dẫn dưới `/api/v1`, trừ `/health` ở origin:
 
 | Nhóm | Endpoint |
 |---|---|
-| Email/Google/JWT | `/auth/register`, `/auth/login`, `/auth/google`, `/auth/me`, `/auth/refresh`, `/auth/logout`, `/auth/password`, `/auth/link-google` |
+| Email/Google/JWT | `/auth/register`, `/auth/login`, `/auth/google`, `/auth/me`, `/auth/refresh`, `/auth/logout`, `/auth/password`, `/auth/password/forgot`, `/auth/password/reset`, `/auth/link-google` |
 | Hồ sơ/mục tiêu | `/profile`, `/nutrition-settings`, `/water-settings` |
 | Tổng ngày/macro | `/dashboard/daily?date=YYYY-MM-DD` |
 | Thực phẩm | `/foods?q=`, `/food-logs`, PUT/DELETE `/food-logs/{id}` |

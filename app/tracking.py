@@ -239,8 +239,10 @@ def daily_dashboard(
     burned = round(sum(float(item.calories_burned) for item in activity_logs), 2)
     net_calories = round(consumed - burned, 2)
     calorie_target = get_calorie_target(db, current_user.id)
+    # The daily food goal tracks calories eaten. Exercise remains a separate
+    # metric and cannot increase the amount shown as available to eat.
     calories_remaining = (
-        round(calorie_target - net_calories, 2)
+        round(calorie_target - consumed, 2)
         if calorie_target is not None
         else None
     )
@@ -344,17 +346,15 @@ def history_calendar(
             or day in weight_by_date
             or day in diary_dates
         )
-        net_calories = consumed - burned
-
         if not has_data:
             day_status = "no_data"
         elif not has_calorie_data:
             day_status = "logged"
         elif calorie_target is None:
             day_status = "no_target"
-        elif net_calories > calorie_target:
+        elif consumed > calorie_target:
             day_status = "over"
-        elif net_calories >= calorie_target * 0.9:
+        elif consumed >= calorie_target * 0.9:
             day_status = "on_target"
         else:
             day_status = "under"

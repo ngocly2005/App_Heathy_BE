@@ -150,6 +150,24 @@ def test_activity_history_can_be_reviewed_and_owned(api):
     assert body(api.get("/api/v1/activity-logs")) == []
 
 
+def test_manual_activity_is_saved_without_catalog_record(api):
+    body(api.put("/api/v1/profile", json=PROFILE))
+    payload = {"manual_name": "Đi bộ cầu thang", "manual_met": 4.0,
+               "duration_minutes": 30, "log_date": YESTERDAY}
+    log = body(api.post("/api/v1/activity-logs", json=payload), 201)
+    assert log["activity_type_id"] is None
+    assert log["activity_name"] == payload["manual_name"]
+    assert log["met_snapshot"] == 4.0
+    assert log["calories_burned"] == 126.0
+    assert body(api.get("/api/v1/activity-logs", params={"date": YESTERDAY}))[0]["id"] == log["id"]
+    for invalid in ({"duration_minutes": 30},
+                    {**payload, "activity_type_id": 1},
+                    {**payload, "manual_met": None},
+                    {**payload, "manual_met": 31},
+                    {**payload, "manual_name": " "}):
+        assert api.post("/api/v1/activity-logs", json=invalid).status_code == 422
+
+
 def test_profile_targets_macros_and_validation(api):
     profile = body(api.put("/api/v1/profile", json=PROFILE))
     assert profile["bmi"] == 22.04
@@ -268,12 +286,56 @@ def test_dashboard_food_updates_while_burned_calories_exceed_food(api):
     body(api.post("/api/v1/activity-logs", json={"activity_type_id":1,"duration_minutes":120,"log_date":YESTERDAY}),201)
     before = body(api.get("/api/v1/dashboard/daily", params={"date":YESTERDAY}))
     assert before["calories_consumed"] == 100 and before["calories_burned"] == 378
-    assert before["net_calories"] == -278 and before["calories_remaining"] == 2278
+    assert before["net_calories"] == -278 and before["calories_remaining"] == 1900
     body(api.post("/api/v1/food-logs", json={"food_id":1,"grams":50,"meal_type":"snack","log_date":YESTERDAY}),201)
     after = body(api.get("/api/v1/dashboard/daily", params={"date":YESTERDAY}))
     assert after["calories_consumed"] == 150 and after["net_calories"] == -228
-    assert after["calories_remaining"] == 2228
+    assert after["calories_remaining"] == 1850
     assert body(api.get("/api/v1/dashboard/daily", params={"date":TODAY}))["calories_consumed"] == 0
+
+
+def test_password_reset_requires_config_and_does_not_reveal_accounts(api, monkeypatch):
+    from app.core.config import get_settings
+    from app import auth
+
+    settings = get_settings()
+    old = (settings.smtp_host, settings.smtp_from_email,
+           settings.password_reset_cooldown_seconds)
+    messages = []
+    try:
+        settings.smtp_host = None
+        settings.smtp_from_email = None
+        assert api.post("/api/v1/auth/password/forgot", json={
+            "email": "absent@example.com"}).status_code == 503
+        settings.smtp_host = "smtp.example.com"
+        settings.smtp_from_email = "fit@example.com"
+        settings.password_reset_cooldown_seconds = 0
+        monkeypatch.setattr(auth, "send_password_reset_mail",
+                            lambda recipient, token, _: messages.append((recipient, token)))
+        registered = body(api.post("/api/v1/auth/register", json={
+            "email": "reset@example.com", "full_name": "Reset User", "password": "oldPassword123"}), 201)
+        expected = body(api.post("/api/v1/auth/password/forgot", json={
+            "email": "RESET@example.com"}), 202)
+        assert body(api.post("/api/v1/auth/password/forgot", json={
+            "email": "absent@example.com"}), 202) == expected
+        assert body(api.post("/api/v1/auth/password/forgot", json={
+            "email": "person1@example.com"}), 202) == expected  # Google-only
+        assert len(messages) == 1 and messages[0][0] == "reset@example.com"
+        token = messages[0][1]
+        assert api.post("/api/v1/auth/password/reset", json={
+            "token": registered["access_token"], "new_password": "newPassword123"}).status_code == 400
+        body(api.post("/api/v1/auth/password/reset", json={
+            "token": token, "new_password": "newPassword123"}))
+        assert api.post("/api/v1/auth/password/reset", json={
+            "token": token, "new_password": "againPassword123"}).status_code == 400
+        assert api.post("/api/v1/auth/login", json={
+            "email": "reset@example.com", "password": "oldPassword123"}).status_code == 401
+        assert api.post("/api/v1/auth/login", json={
+            "email": "reset@example.com", "password": "newPassword123"}).status_code == 200
+        assert api.post("/api/v1/auth/refresh", json={
+            "refresh_token": registered["refresh_token"]}).status_code == 401
+    finally:
+        settings.smtp_host, settings.smtp_from_email, settings.password_reset_cooldown_seconds = old
 
 
 def test_admin_auth_catalog_status_and_analytics(api):
@@ -315,7 +377,12 @@ def test_ai_history_photo_and_errors_are_isolated(api, monkeypatch):
     assert body(api.get("/api/v1/ai/chat/history",headers=api.user_headers(2))) == []
     photo = io.BytesIO()
     Image.new("RGB",(8,8)).save(photo,format="PNG")
+    assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY})) is None
     body(api.post("/api/v1/ai/photo/analyze",params={"date":YESTERDAY},files={"image":("meal.png",photo.getvalue(),"image/png")}))
+    latest = body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY}))
+    assert latest["id"] > 0 and latest["analysis"]["notes"] == "No food"
+    assert body(api.get("/api/v1/ai/photo/latest", params={"date": YESTERDAY},
+        headers=api.user_headers(2))) is None
     assert body(api.get("/api/v1/food-logs",params={"date":YESTERDAY})) == []
     assert api.post("/api/v1/ai/photo/analyze",files={"image":("x.png",b"not an image","image/png")}).status_code == 422
     confirmed = body(api.post("/api/v1/ai/photo/confirm",json={"log_date":YESTERDAY,"meal_type":"lunch","meal_time":"12:00",

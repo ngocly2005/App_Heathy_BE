@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     max_image_size_mb: int = Field(default=8, ge=1, le=20)
     food_media_dir: str = "./media/food"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from_email: str | None = None
+    smtp_starttls: bool = True
+    password_reset_minutes: int = Field(default=15, ge=5, le=60)
+    password_reset_cooldown_seconds: int = Field(default=60, ge=0, le=3600)
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -38,16 +38,20 @@ class ActivityUpdate(BaseModel):
 
 @router.post("/activity-logs", response_model=ActivityLogResponse, status_code=201)
 def create_activity(payload: ActivityLogCreate, current_user: CurrentUser, db: DbSession):
-    activity = db.get(ActivityType, payload.activity_type_id)
-    if activity is None or not activity.is_active:
-        raise HTTPException(404, "Activity type not found")
+    if payload.activity_type_id is not None:
+        activity = db.get(ActivityType, payload.activity_type_id)
+        if activity is None or not activity.is_active:
+            raise HTTPException(404, "Activity type not found")
+        activity_id, activity_name, met = activity.id, activity.name, float(activity.met)
+    else:
+        activity_id, activity_name, met = None, payload.manual_name, payload.manual_met
     profile = db.get(HealthProfile, current_user.id)
     if profile is None:
         raise HTTPException(409, "Create a health profile first")
-    row = ActivityLog(user_id=current_user.id, activity_type_id=activity.id,
-        log_date=payload.log_date, activity_name=activity.name, met_snapshot=activity.met,
+    row = ActivityLog(user_id=current_user.id, activity_type_id=activity_id,
+        log_date=payload.log_date, activity_name=activity_name, met_snapshot=met,
         duration_minutes=payload.duration_minutes,
-        calories_burned=calculate_activity_calories(float(activity.met), float(profile.weight_kg), payload.duration_minutes))
+        calories_burned=calculate_activity_calories(met, float(profile.weight_kg), payload.duration_minutes))
     db.add(row)
     db.commit()
     db.refresh(row)
