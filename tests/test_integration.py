@@ -1,6 +1,9 @@
 """HTTP regression checks with isolated in-memory SQLite and mocked providers."""
 import io
+import hashlib
+import json
 import os
+from pathlib import Path
 from datetime import date, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite://"
@@ -132,6 +135,33 @@ def test_food_images_are_local_validated_and_private(api, tmp_path):
         assert len(list(tmp_path.glob("*.jpg"))) == 1  # catalog image remains
     finally:
         settings.food_media_dir = old_dir
+
+
+def test_bundled_food_catalog_has_100_visible_foods_and_working_photos(api):
+    catalog_path = Path(__file__).resolve().parents[1] / "app" / "data" / "food_catalog_100.json"
+    photo_dir = catalog_path.parents[1] / "assets" / "food_catalog"
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert len(catalog) == len({row["name"] for row in catalog}) == 100
+    for row in catalog:
+        photo = photo_dir / row["image_filename"]
+        assert photo.is_file(), row["name"]
+        with Image.open(photo) as image:
+            assert image.format == "JPEG" and min(image.size) >= 120
+    for name in ("Cooked chicken breast", "Cooked white rice", "Boiled egg", "Banana", "Apple"):
+        assert (photo_dir / (hashlib.md5(name.encode()).hexdigest() + ".jpg")).is_file()
+    with Session(api.test_engine) as db:
+        for index, row in enumerate(catalog, start=2):
+            db.add(Food(id=index, name=row["name"], image_filename=row["image_filename"],
+                calories_per_100g=row["calories_per_100g"],
+                protein_per_100g=row["protein_per_100g"],
+                carb_per_100g=row["carb_per_100g"], fat_per_100g=row["fat_per_100g"]))
+        db.commit()
+    listed = body(api.get("/api/v1/foods"))
+    assert len(listed) == 101
+    assert sum(food["has_image"] for food in listed) == 100
+    response = api.get("/api/v1/foods/2/image")
+    assert response.status_code == 200 and response.headers["content-type"] == "image/jpeg"
+    assert api.get("/api/v1/foods/2/image", headers={"Authorization": ""}).status_code == 401
 
 
 def test_activity_history_can_be_reviewed_and_owned(api):

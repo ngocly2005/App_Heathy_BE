@@ -30,8 +30,9 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 ## Bổ sung món cá nhân và ảnh — 17/11/2026
 
-Revision mới duy nhất `20261117_0013` nối sau `20261113_0012`: tạo `user_foods` và
-thêm tên tệp ảnh cho catalog `foods`. Không sửa lịch sử migration đã áp dụng.
+Revision `20261117_0013` tạo `user_foods` và thêm tên tệp ảnh cho catalog
+`foods`. Revision `20261119_0015` bổ sung 100 món và ảnh đóng gói trong repo,
+sau revision `20261119_0014` của danh sách vận động. Không sửa migration đã áp dụng.
 Sau khi sao lưu DB, giáo viên chạy `alembic current`, `alembic heads`, rồi
 `alembic upgrade head`. FE mới cần revision này trước khi dùng màn Tìm món ăn.
 
@@ -63,9 +64,8 @@ alembic current
 alembic heads
 ```
 
-Source hiện có **một head `20261117_0013`**. Nếu DB đang ở `20261113_0012`,
-chỉ revision ảnh/món cá nhân mới được áp dụng. Nếu DB đang ở `20261105_0011`,
-Alembic sẽ áp dụng lần lượt 0012 và 0013. Sau khi kiểm tra cấu hình và sao lưu,
+Source hiện có **một head `20261119_0015`**. Alembic sẽ áp dụng các revision
+còn thiếu theo thứ tự. Sau khi kiểm tra cấu hình và sao lưu,
 giáo viên thực hiện:
 
 ```powershell
@@ -79,6 +79,16 @@ sẵn không được Alembic nạp; chuỗi active dùng `8da74fd2c368`. Không
 sang `.py` vì sẽ tạo nhánh trùng tạo bảng.
 
 Codex chỉ sinh SQL offline và kiểm tra graph; chưa upgrade DB của bạn.
+
+## Danh mục 100 món mới
+
+Chạy `alembic upgrade head` để thêm 100 món vào `foods` và gắn ảnh cho cả 5 món
+ban đầu. Ảnh danh mục được đóng gói trong `app/assets/food_catalog`, không cần
+chép vào `FOOD_MEDIA_DIR`; ảnh do Admin hoặc người dùng tải lên vẫn nằm ở thư mục
+media đã cấu hình. Danh sách `/foods` trả tới 500 mục để 100 món mới đều hiện
+trong màn Tìm món ăn. Số liệu dinh dưỡng tính trên 100 g từ USDA FoodData Central,
+chỉ là giá trị tham khảo; công thức, nhãn hàng và cách chế biến thực tế có thể khác.
+Nguồn và giấy phép từng ảnh nằm trong `app/assets/food_catalog/ATTRIBUTION.md`.
 
 ## Chạy API và cấp Admin
 

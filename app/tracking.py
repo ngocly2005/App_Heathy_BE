@@ -59,10 +59,10 @@ def list_foods(
     personal = select(UserFood).where(UserFood.user_id == current_user.id)
     if query:
         personal = personal.where(UserFood.name.icontains(query, autoescape=True))
-    rows = list(db.scalars(statement.order_by(Food.name).limit(50)))
-    rows.extend(db.scalars(personal.order_by(UserFood.name).limit(50)))
+    rows = list(db.scalars(statement.order_by(Food.name).limit(500)))
+    rows.extend(db.scalars(personal.order_by(UserFood.name).limit(500)))
     rows.sort(key=lambda item: (item.name.casefold(), item.is_custom, item.id))
-    return [FoodResponse.model_validate(item) for item in rows[:50]]
+    return [FoodResponse.model_validate(item) for item in rows[:500]]
 
 
 @router.post(

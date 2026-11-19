@@ -92,9 +92,14 @@ def get_catalog(db: DbSession, food_id: int) -> Food:
 
 
 def serve(row: Food | UserFood) -> FileResponse:
-    if not row.image_filename or not image_path(row.image_filename).is_file():
+    if not row.image_filename:
         raise HTTPException(status_code=404, detail="Food image not found")
-    return FileResponse(image_path(row.image_filename), media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+    path = image_path(row.image_filename)
+    if not path.is_file() and isinstance(row, Food):
+        path = Path(__file__).resolve().parent / "assets" / "food_catalog" / row.image_filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Food image not found")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/foods/{food_id}/image")
