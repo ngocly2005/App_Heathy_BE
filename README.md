@@ -64,7 +64,7 @@ alembic current
 alembic heads
 ```
 
-Source hiện có **một head `20261119_0015`**. Alembic sẽ áp dụng các revision
+Source hiện có **một head `20261119_0016`**. Alembic sẽ áp dụng các revision
 còn thiếu theo thứ tự. Sau khi kiểm tra cấu hình và sao lưu,
 giáo viên thực hiện:
 
@@ -130,8 +130,10 @@ không cần migration riêng. Chưa chạy upgrade database thật.
   Không tự gộp chỉ vì email trùng; đăng nhập bằng phương thức hiện có trước.
 - `POST /auth/password/forgot`: email, gửi mã đặt lại nếu là tài khoản email/mật khẩu.
   API trả cùng một câu cho email tồn tại hoặc không tồn tại, tránh lộ danh sách tài khoản.
-- `POST /auth/password/reset`: mã từ email và `new_password`; mã ký, có thời hạn,
-  chỉ dùng một lần. Sau khi đặt lại, các refresh token cũ bị thu hồi; access JWT
+- `POST /auth/password/reset`: JSON `email`, `token` (đúng 8 chữ số) và
+  `new_password`. Mã lưu dạng băm, mặc định có hiệu lực 15 phút, chỉ dùng một lần;
+  sau 5 lần nhập sai cần yêu cầu mã mới. Trước khi dùng phải chạy migration
+  `20261119_0016`. Sau khi đặt lại, các refresh token cũ bị thu hồi; access JWT
   đã phát hành có thể còn hiệu lực tối đa 30 phút mặc định.
 - Android: Tài khoản → Bảo mật tài khoản để thêm/đổi mật khẩu hoặc liên kết Google.
   Ở màn đăng nhập, bấm **Quên mật khẩu?** rồi nhập email, dán mã và mật khẩu mới.

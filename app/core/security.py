@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import hmac
+import secrets
 from uuid import uuid4
 
 import jwt
@@ -36,7 +37,6 @@ def create_token(
     user_id: int,
     token_type: str,
     expires_delta: timedelta,
-    password_fingerprint: str | None = None,
 ) -> tuple[str, str, datetime]:
     now = datetime.now(UTC)
     expires_at = now + expires_delta
@@ -50,8 +50,6 @@ def create_token(
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
     }
-    if password_fingerprint is not None:
-        payload["pwd"] = password_fingerprint
     token = jwt.encode(
         payload,
         settings.secret_key,
@@ -77,19 +75,15 @@ def create_refresh_token(user_id: int) -> tuple[str, str, datetime]:
     )
 
 
-def reset_password_fingerprint(password_hash: str) -> str:
-    """Bind a reset token to the current hash without exposing that hash."""
-    return hmac.new(settings.secret_key.encode(), password_hash.encode(), sha256).hexdigest()
+def create_password_reset_code() -> str:
+    """Keep leading zeros: the code is always exactly eight decimal digits."""
+    return f"{secrets.randbelow(100_000_000):08d}"
 
 
-def create_password_reset_token(user_id: int, password_hash: str) -> str:
-    token, _, _ = create_token(
-        user_id=user_id,
-        token_type="password_reset",
-        expires_delta=timedelta(minutes=settings.password_reset_minutes),
-        password_fingerprint=reset_password_fingerprint(password_hash),
-    )
-    return token
+def password_reset_code_hash(user_id: int, password_hash: str, code: str) -> str:
+    """A keyed digest protects a short PIN if the reset table is disclosed."""
+    value = f"password-reset:{user_id}:{password_hash}:{code}".encode()
+    return hmac.new(settings.secret_key.encode(), value, sha256).hexdigest()
 
 
 def decode_token(token: str, expected_type: str) -> dict[str, object]:

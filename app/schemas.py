@@ -72,8 +72,14 @@ class PasswordResetStartRequest(BaseModel):
 
 class PasswordResetFinishRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    token: str = Field(min_length=20, max_length=2048)
+    email: EmailStr
+    token: str = Field(min_length=8, max_length=8, pattern=r"^[0-9]{8}$")
     new_password: SecretStr = Field(min_length=8, max_length=128)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
 
     @field_validator("new_password")
     @classmethod

@@ -21,7 +21,7 @@ def send_password_reset_mail(recipient: str, token: str, settings: Settings) -> 
     message["Subject"] = "FitChat: mã đặt lại mật khẩu"
     message.set_content(
         "Bạn đã yêu cầu đặt lại mật khẩu FitChat.\n\n"
-        "Mở ứng dụng, chọn Quên mật khẩu rồi dán mã sau vào ô xác nhận:\n\n"
+        "Mở ứng dụng, chọn Quên mật khẩu rồi nhập mã 8 chữ số sau:\n\n"
         f"{token}\n\n"
         f"Mã có hiệu lực trong {settings.password_reset_minutes} phút và chỉ dùng một lần. "
         "Nếu bạn không yêu cầu, hãy bỏ qua email này.\n"

@@ -63,6 +63,21 @@ class RefreshToken(Base):
 
 
 
+class PasswordResetCode(Base):
+    __tablename__ = "password_reset_codes"
+    __table_args__ = (
+        CheckConstraint("attempts >= 0 AND attempts <= 5", name="ck_password_reset_attempts"),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class HealthProfile(Base):
     __tablename__ = "health_profiles"
     __table_args__ = (

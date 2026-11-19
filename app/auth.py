@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import hmac
 import logging
@@ -16,15 +16,15 @@ from app.core.security import (
     TokenError,
     create_access_token,
     create_refresh_token,
-    create_password_reset_token,
+    create_password_reset_code,
     decode_token,
     hash_password,
+    password_reset_code_hash,
     password_hasher,
-    reset_password_fingerprint,
     verify_password,
 )
 from app.dependencies import CurrentUser, DbSession
-from app.models import RefreshToken, User
+from app.models import PasswordResetCode, RefreshToken, User
 from app.schemas import (
     GoogleLoginRequest,
     EmailLoginRequest,
@@ -64,6 +64,11 @@ def _deliver_reset_code(recipient: str, token: str) -> None:
     except Exception as error:
         # Never log the token or recipient; the public response is identical.
         logger.warning("Password reset email delivery failed (%s)", type(error).__name__)
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite in tests returns naive datetimes; PostgreSQL returns aware ones.
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
@@ -119,27 +124,47 @@ def forgot_password(payload: PasswordResetStartRequest, background_tasks: Backgr
         raise HTTPException(503, "Password reset email is not configured")
     email = str(payload.email)
     if _allow_reset_request(email, settings.password_reset_cooldown_seconds):
-        user = db.scalar(select(User).where(User.email == email))
+        user = db.scalar(select(User).where(User.email == email).with_for_update())
         if user is not None and user.status == "active" and user.password_hash:
-            token = create_password_reset_token(user.id, user.password_hash)
-            background_tasks.add_task(_deliver_reset_code, email, token)
+            previous = db.get(PasswordResetCode, user.id)
+            code = create_password_reset_code()
+            digest = password_reset_code_hash(user.id, user.password_hash, code)
+            while previous is not None and hmac.compare_digest(digest, previous.code_hash):
+                code = create_password_reset_code()
+                digest = password_reset_code_hash(user.id, user.password_hash, code)
+            now = datetime.now(UTC)
+            if previous is None:
+                db.add(PasswordResetCode(user_id=user.id, code_hash=digest,
+                    expires_at=now + timedelta(minutes=settings.password_reset_minutes),
+                    attempts=0, created_at=now))
+            else:
+                previous.code_hash = digest
+                previous.expires_at = now + timedelta(minutes=settings.password_reset_minutes)
+                previous.attempts = 0
+                previous.created_at = now
+            db.commit()
+            background_tasks.add_task(_deliver_reset_code, email, code)
     return MessageResponse(message="If this email has a password account, a reset code will be sent")
 
 
 @router.post("/password/reset", response_model=MessageResponse)
 def reset_password(payload: PasswordResetFinishRequest, db: DbSession) -> MessageResponse:
     invalid = HTTPException(400, "Invalid or expired reset code")
-    try:
-        claims = decode_token(payload.token, expected_type="password_reset")
-        user_id = int(str(claims["sub"]))
-        fingerprint = str(claims["pwd"])
-    except (TokenError, KeyError, TypeError, ValueError) as error:
-        raise invalid from error
-    user = db.scalar(select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True))
-    if (user is None or user.status != "active" or not user.password_hash or
-            not hmac.compare_digest(fingerprint, reset_password_fingerprint(user.password_hash))):
+    user = db.scalar(select(User).where(User.email == str(payload.email)).with_for_update()
+        .execution_options(populate_existing=True))
+    if user is None or user.status != "active" or not user.password_hash:
+        raise invalid
+    code_row = db.get(PasswordResetCode, user.id)
+    if (code_row is None or code_row.attempts >= 5 or
+            _as_utc(code_row.expires_at) <= datetime.now(UTC)):
+        raise invalid
+    digest = password_reset_code_hash(user.id, user.password_hash, payload.token)
+    if not hmac.compare_digest(digest, code_row.code_hash):
+        code_row.attempts += 1
+        db.commit()
         raise invalid
     user.password_hash = hash_password(payload.new_password.get_secret_value())
+    db.delete(code_row)
     db.execute(update(RefreshToken).where(RefreshToken.user_id == user.id,
         RefreshToken.revoked_at.is_(None)).values(revoked_at=datetime.now(UTC)))
     db.commit()

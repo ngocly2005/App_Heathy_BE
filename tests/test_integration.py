@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["SECRET_KEY"] = "isolated-test-secret-not-for-deployment-20261105"
@@ -327,6 +327,7 @@ def test_dashboard_food_updates_while_burned_calories_exceed_food(api):
 def test_password_reset_requires_config_and_does_not_reveal_accounts(api, monkeypatch):
     from app.core.config import get_settings
     from app import auth
+    from app.models import PasswordResetCode
 
     settings = get_settings()
     old = (settings.smtp_host, settings.smtp_from_email,
@@ -342,6 +343,8 @@ def test_password_reset_requires_config_and_does_not_reveal_accounts(api, monkey
         settings.password_reset_cooldown_seconds = 0
         monkeypatch.setattr(auth, "send_password_reset_mail",
                             lambda recipient, token, _: messages.append((recipient, token)))
+        codes = iter(("00000042", "12345678", "87654321", "11223344"))
+        monkeypatch.setattr(auth, "create_password_reset_code", lambda: next(codes))
         registered = body(api.post("/api/v1/auth/register", json={
             "email": "reset@example.com", "full_name": "Reset User", "password": "oldPassword123"}), 201)
         expected = body(api.post("/api/v1/auth/password/forgot", json={
@@ -352,18 +355,54 @@ def test_password_reset_requires_config_and_does_not_reveal_accounts(api, monkey
             "email": "person1@example.com"}), 202) == expected  # Google-only
         assert len(messages) == 1 and messages[0][0] == "reset@example.com"
         token = messages[0][1]
+        assert token == "00000042" and len(token) == 8 and token.isascii() and token.isdigit()
+        with Session(api.test_engine) as db:
+            row = db.get(PasswordResetCode, 4)
+            assert row is not None and token not in row.code_hash
         assert api.post("/api/v1/auth/password/reset", json={
-            "token": registered["access_token"], "new_password": "newPassword123"}).status_code == 400
+            "email": "reset@example.com", "token": registered["access_token"],
+            "new_password": "newPassword123"}).status_code == 422
+        assert api.post("/api/v1/auth/password/reset", json={
+            "email": "absent@example.com", "token": token,
+            "new_password": "newPassword123"}).status_code == 400
+        body(api.post("/api/v1/auth/password/forgot", json={"email": "reset@example.com"}), 202)
+        assert messages[-1][1] == "12345678"
+        assert api.post("/api/v1/auth/password/reset", json={
+            "email": "reset@example.com", "token": token,
+            "new_password": "newPassword123"}).status_code == 400
+        token = messages[-1][1]
+        for _ in range(3):
+            assert api.post("/api/v1/auth/password/reset", json={
+                "email": "reset@example.com", "token": "99999999",
+                "new_password": "newPassword123"}).status_code == 400
         body(api.post("/api/v1/auth/password/reset", json={
-            "token": token, "new_password": "newPassword123"}))
+            "email": "reset@example.com", "token": token, "new_password": "newPassword123"}))
         assert api.post("/api/v1/auth/password/reset", json={
-            "token": token, "new_password": "againPassword123"}).status_code == 400
+            "email": "reset@example.com", "token": token, "new_password": "againPassword123"}).status_code == 400
         assert api.post("/api/v1/auth/login", json={
             "email": "reset@example.com", "password": "oldPassword123"}).status_code == 401
         assert api.post("/api/v1/auth/login", json={
             "email": "reset@example.com", "password": "newPassword123"}).status_code == 200
         assert api.post("/api/v1/auth/refresh", json={
             "refresh_token": registered["refresh_token"]}).status_code == 401
+        body(api.post("/api/v1/auth/password/forgot", json={"email": "reset@example.com"}), 202)
+        locked_code = messages[-1][1]
+        for _ in range(5):
+            assert api.post("/api/v1/auth/password/reset", json={
+                "email": "reset@example.com", "token": "99999999",
+                "new_password": "anotherPassword123"}).status_code == 400
+        assert api.post("/api/v1/auth/password/reset", json={
+            "email": "reset@example.com", "token": locked_code,
+            "new_password": "anotherPassword123"}).status_code == 400
+        body(api.post("/api/v1/auth/password/forgot", json={"email": "reset@example.com"}), 202)
+        expired_code = messages[-1][1]
+        with Session(api.test_engine) as db:
+            row = db.get(PasswordResetCode, 4)
+            row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            db.commit()
+        assert api.post("/api/v1/auth/password/reset", json={
+            "email": "reset@example.com", "token": expired_code,
+            "new_password": "anotherPassword123"}).status_code == 400
     finally:
         settings.smtp_host, settings.smtp_from_email, settings.password_reset_cooldown_seconds = old
 
